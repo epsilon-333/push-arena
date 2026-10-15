@@ -36,6 +36,8 @@
     <div id="message"></div>
     <div id="skills" hidden></div>
     <div id="emotes"></div>
+    <button id="mute" title="음량">🔊</button>
+    <div id="volume" hidden><input type="range" min="0" max="100" step="5"><span>70</span></div>
     <div id="help"><kbd>WASD</kbd> 이동 <kbd>Space</kbd> 밀치기 <kbd>Q</kbd><kbd>E</kbd> 스킬 <kbd>마우스</kbd> 시점 <kbd>1~4</kbd> 감정</div>
   </div>
   <div id="labels"></div>
@@ -45,6 +47,36 @@
     <div class="stick"><div class="knob"></div></div>
     <button class="btn-push">밀치기</button>
     <div class="rotate-hint">📱 가로로 돌리면 더 넓게 보여요</div>
+  </div>
+
+  <!-- 대기실 -->
+  <div id="lobby" hidden>
+    <div class="lobby-box">
+      <div class="lobby-title">대기실</div>
+      <div class="lobby-list"></div>
+      <button id="btn-start">시작하기</button>
+      <div class="lobby-timer"></div>
+    </div>
+  </div>
+
+  <!-- 연결 중 -->
+  <div id="connecting" hidden>
+    <div class="spinner"></div>
+    <div class="conn-title"></div>
+    <div class="conn-sub"></div>
+  </div>
+
+  <!-- 최종 순위 -->
+  <div id="results" hidden>
+    <div class="results-box">
+      <div class="results-title">🏆 최종 순위</div>
+      <div class="results-list"></div>
+      <div class="results-buttons">
+        <button id="btn-restart">다시 하기</button>
+        <button id="btn-exit">처음 화면으로</button>
+      </div>
+      <div class="results-timer"></div>
+    </div>
   </div>
 
   <!-- 능력 선택 -->

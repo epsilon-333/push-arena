@@ -60,7 +60,8 @@ wss.on('connection', socket => {
     player = room.addPlayer(id, socket);
     room.setName(id, msg.name);
     if (practice) for (let i = 0; i < PRACTICE_BOTS; i++) room.addBot();
-    socket.send(JSON.stringify({ t: 'welcome', id, roomId: room.id, practice, abilities: catalog, skillCd, winScore: CONFIG.WIN_SCORE }));
+    socket.send(JSON.stringify({ t: 'welcome', id, roomId: room.id, practice, abilities: catalog, skillCd, winScore: CONFIG.WIN_SCORE,
+      physics: { accel: CONFIG.MOVE_ACCEL, maxSpeed: CONFIG.MAX_SPEED, friction: CONFIG.FRICTION, iceFriction: CONFIG.ICE_FRICTION, iceAccel: CONFIG.ICE_ACCEL_MULT, tiltGravity: CONFIG.TILT_GRAVITY, tick: CONFIG.TICK_RATE } }));
     console.log(`[room ${room.id}${practice ? ' 연습' : ''}] ${player.name} 입장 (${room.players.size}명)`);
   }
 
@@ -71,6 +72,8 @@ wss.on('connection', socket => {
     if (!room) return;
     if (msg.t === 'input') room.setInput(id, msg);
     else if (msg.t === 'pick') room.pick(id, msg.id, msg.slot);
+    else if (msg.t === 'restart') room.restart(id);
+    else if (msg.t === 'start') room.requestStart(id);
     else if (msg.t === 'emote') room.emote(id, msg.n);
   });
 

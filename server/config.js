@@ -3,7 +3,8 @@ export const CONFIG = {
   TICK_RATE: 30,          // 서버 업데이트 횟수/초
   MAX_PLAYERS: 4,         // 방 하나 최대 인원
   MIN_PLAYERS: 2,         // 라운드 시작 최소 인원
-  WIN_SCORE: 5,           // 이 점수에 먼저 도달하면 게임 승리
+  LOBBY_TIME: 30,         // 대기실에서 이 시간이 지나면 빈자리를 봇으로 채워 자동 시작
+  WIN_SCORE: Number(process.env.WIN_SCORE) || 5, // 이 점수에 먼저 도달하면 게임 승리 (테스트: WIN_SCORE=1)
 
   HEX_RINGS: 7,           // 중앙 타일 바깥으로 몇 겹
   HEX_SIZE: 1.2,          // 타일 크기 (꼭짓점까지 거리)
@@ -33,8 +34,8 @@ export const CONFIG = {
   PICK_TIME: 10,        // 능력 선택 제한 시간 (넘으면 자동 선택)
   PICK_OPTIONS: 3,        // 제시되는 능력 개수
 
-  MOVE_ACCEL: 45,
-  MAX_SPEED: 9.5,
+  MOVE_ACCEL: 42,
+  MAX_SPEED: 8.2,
   FRICTION: 4.5,          // 클수록 빨리 멈춤 (낮으면 살짝 미끄러짐)
   ICE_FRICTION: 1.1,      // 빙판길 마찰
   ICE_ACCEL_MULT: 0.55,   // 빙판길에서는 가속도 덜 붙음
@@ -58,5 +59,6 @@ export const CONFIG = {
 
   COUNTDOWN_TIME: 3,
   ROUND_END_TIME: 3,
+  RESULT_TIME: 30,        // 최종 순위 화면 (다 같이 '다시 하기' 누르면 바로 새 게임)
   FALL_TIME: 1,           // 판 밖으로 나간 뒤 탈락 처리까지
 };

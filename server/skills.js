@@ -86,6 +86,7 @@ export function updateOrbs(room, dt, list) {
       const pull = C.ORB_PULL * (1 - d / C.ORB_RADIUS * 0.6) / p.mods.weight;
       p.vx += (dx / d) * pull * dt;
       p.vz += (dz / d) * pull * dt;
+      p.lastHitBy = o.owner; p.lastHitTime = room.time; // 빨려 들어가 떨어지면 던진 사람 처치
     }
   }
   for (const o of room.orbs) if (o.life <= 0) room.arena.fillHole(o.hole);

@@ -29,13 +29,23 @@ export class Room {
     this.timer = 0;
     this.message = '';
     this.nextPlayerNum = 1;
+    this.lobbyTimer = C.LOBBY_TIME; // 대기실: 이 시간이 지나면 빈자리를 봇으로 채워 자동 시작
+    this.startRequested = false;
   }
 
-  get isFull() { return this.practice || this.players.size >= C.MAX_PLAYERS; }
+  // 사람 기준으로 꽉 찼는지 (봇 자리는 사람이 오면 비워줌)
+  get humans() { return [...this.players.values()].filter(p => !p.bot); }
+  get isFull() { return this.practice || this.humans.length >= C.MAX_PLAYERS; }
   get isEmpty() { return [...this.players.values()].every(p => p.bot); } // 사람이 없으면 빈 방
   get maxR() { return this.arena.size * 1.5 * this.arena.rings; }
 
   addPlayer(id, socket) {
+    // 사람이 들어왔는데 자리가 없으면 봇 하나를 내보냄 (탈락한 봇 먼저)
+    if (socket !== NO_SOCKET && this.players.size >= C.MAX_PLAYERS) {
+      const bots = [...this.players.values()].filter(p => p.bot);
+      const out = bots.find(b => !b.alive) ?? bots[0];
+      if (out) this.players.delete(out.id);
+    }
     const usedColors = new Set([...this.players.values()].map(p => p.color));
     const p = {
       id, socket,
@@ -45,7 +55,8 @@ export class Room {
       hp: C.MAX_HP, stunned: false, immune: 0,
       cooldown: 0, attackFlash: 0, attackCount: 0, hitCount: 0,
       alive: false, fallTimer: 0,
-      score: 0,
+      score: 0, kills: 0, ready: false,
+      lastHitBy: null, lastHitTime: -99,
       abilities: [], mods: defaultMods(),
       skills: [null, null], skillCd: [0, 0],
       dash: 0, shield: 0, air: 0, airMax: 0, trailTimer: 0,
@@ -80,6 +91,7 @@ export class Room {
     p.input.x = x; p.input.z = z;
     if (input.attack) p.input.attack = true; // 다음 틱에서 소비
     if (input.skill === 0 || input.skill === 1) p.input.skill = input.skill;
+    if (Number.isFinite(input.seq)) p.inputSeq = input.seq; // 클라이언트 예측용
   }
 
   setName(id, name) {
@@ -95,6 +107,27 @@ export class Room {
     p.emote = n;
     p.emoteTimer = C.EMOTE_TIME;
     p.emoteCooldown = C.EMOTE_COOLDOWN;
+  }
+
+  // 대기실에서 "시작하기"
+  requestStart(id) {
+    if (this.phase === 'waiting' && this.players.has(id)) this.startRequested = true;
+  }
+
+  // 빈자리(최대 인원까지)를 봇으로 채움
+  fillBots() {
+    while (this.players.size < C.MAX_PLAYERS) this.addBot();
+  }
+
+  toLobby() {
+    this.phase = 'waiting';
+    this.lobbyTimer = C.LOBBY_TIME;
+  }
+
+  // 최종 순위 화면에서 "다시 하기"
+  restart(id) {
+    const p = this.players.get(id);
+    if (p && this.phase === 'gameOver') p.ready = true;
   }
 
   // slot: 스킬 칸이 다 찼을 때 바꿀 칸 (0=Q, 1=E)
@@ -167,7 +200,7 @@ export class Room {
         facing: a + Math.PI, // 중앙을 바라봄
         hp: C.MAX_HP, stunned: false, immune: 0, cooldown: 0, attackFlash: 0,
         alive: true, fallTimer: 0,
-        skillCd: [0, 0], dash: 0, shield: 0, air: 0,
+        skillCd: [0, 0], dash: 0, shield: 0, air: 0, lastHitBy: null,
       });
     });
   }
@@ -175,13 +208,18 @@ export class Room {
   updatePhase(dt) {
     const count = this.players.size;
     switch (this.phase) {
-      case 'waiting':
-        this.message = `플레이어 대기 중 (${count}/${C.MAX_PLAYERS}, 최소 ${C.MIN_PLAYERS}명)`;
-        if (count >= C.MIN_PLAYERS) this.startPicking(); // 게임 시작: 첫 라운드 전에 카드 1장
+      case 'waiting': // 대기실: 누가 "시작하기"를 누르거나 시간이 다 되면 시작
+        this.message = '';
+        this.lobbyTimer -= dt;
+        if (this.practice || this.startRequested || this.lobbyTimer <= 0) {
+          this.fillBots();
+          this.startRequested = false;
+          this.startPicking(); // 게임 시작: 첫 라운드 전에 카드 1장
+        }
         break;
       case 'countdown':
         this.timer -= dt;
-        if (count < C.MIN_PLAYERS) { this.phase = 'waiting'; break; }
+        if (count < C.MIN_PLAYERS) { this.toLobby(); break; }
         if (this.timer <= 0) { this.phase = 'playing'; this.message = ''; }
         break;
       case 'playing': {
@@ -192,8 +230,10 @@ export class Room {
           if (winner?.bot) this.emote(winner.id, 0); // 봇도 이기면 신남
           if (winner && winner.score >= C.WIN_SCORE) {
             this.phase = 'gameOver';
-            this.timer = C.ROUND_END_TIME * 2;
+            this.timer = C.RESULT_TIME;
             this.message = `${winner.name} 최종 승리!`;
+            this.results = this.ranking();
+            this.players.forEach(p => { p.ready = false; });
           } else {
             this.phase = 'roundEnd';
             this.timer = C.ROUND_END_TIME;
@@ -206,7 +246,7 @@ export class Room {
         this.timer -= dt;
         if (this.timer <= 0) {
           if (count >= C.MIN_PLAYERS) this.startPicking();
-          else this.phase = 'waiting';
+          else this.toLobby();
         }
         break;
       case 'picking': {
@@ -215,19 +255,38 @@ export class Room {
         if (this.timer <= 0 || allPicked) {
           this.finishPicking();
           if (count >= C.MIN_PLAYERS) this.startCountdown();
-          else this.phase = 'waiting';
+          else this.toLobby();
         }
         break;
       }
-      case 'gameOver':
+      case 'gameOver': {
         this.timer -= dt;
-        if (this.timer <= 0) {
-          this.players.forEach(p => { p.score = 0; p.abilities = []; p.mods = defaultMods(); p.skills = [null, null]; });
+        const humans = [...this.players.values()].filter(p => !p.bot);
+        const allReady = humans.length > 0 && humans.every(p => p.ready);
+        if (this.timer <= 0 || allReady) {
+          this.results = null;
+          this.players.forEach(p => {
+            Object.assign(p, { score: 0, kills: 0, ready: false, abilities: [], mods: defaultMods(), skills: [null, null] });
+          });
           if (count >= C.MIN_PLAYERS) this.startPicking(); // 새 게임도 카드 1장부터
-          else this.phase = 'waiting';
+          else this.toLobby();
         }
         break;
+      }
     }
+  }
+
+  // 최종 순위: 승리 라운드 → 떨어뜨린 수
+  ranking() {
+    return [...this.players.values()]
+      .sort((a, b) => b.score - a.score || b.kills - a.kills)
+      .map((p, i) => ({ rank: i + 1, id: p.id, name: p.name, color: p.color, score: p.score, kills: p.kills, ab: p.abilities, bot: !!p.bot }));
+  }
+
+  // 떨어진 사람을 최근(4초 안)에 민 사람에게 처치 기록
+  creditKill(p) {
+    const killer = this.players.get(p.lastHitBy);
+    if (killer && killer !== p && this.time - p.lastHitTime < 4) killer.kills++;
   }
 
   // ---------- 물리/전투 ----------
@@ -370,7 +429,7 @@ export class Room {
     for (const p of list) {
       if (p.fallTimer > 0) {
         p.fallTimer += dt;
-        if (p.fallTimer >= C.FALL_TIME) p.alive = false;
+        if (p.fallTimer >= C.FALL_TIME) { p.alive = false; this.creditKill(p); }
       } else if (p.air <= 0 && !this.arena.isGround(p.x, p.z)) {
         p.fallTimer = dt;
         p.dash = 0;
@@ -403,6 +462,7 @@ export class Room {
     t.vx += nx * kb;
     t.vz += nz * kb;
     t.hitCount++;
+    if (source) { t.lastHitBy = source.id; t.lastHitTime = this.time; }
     if (source && t.mods.reflect > 0 && source.shield <= 0) {
       source.vx -= nx * kb * t.mods.reflect;
       source.vz -= nz * kb * t.mods.reflect;
@@ -518,6 +578,7 @@ export class Room {
     this.sendAll({
       t: 'state',
       phase: this.phase,
+      lobby: this.phase === 'waiting' ? Math.max(0, Math.ceil(this.lobbyTimer)) : 0,
       timer: r2(Math.max(0, this.timer)),
       message: this.message,
       rule: this.rule,
@@ -525,13 +586,16 @@ export class Room {
       orbs: this.orbs.map(o => ({ id: o.id, x: r2(o.x), z: r2(o.z), fly: o.fly > 0 })),
       ice: this.iceTrail.map(t => [r2(t.x), r2(t.z), r2(this.time - t.t)]),
       ev: this.events,
+      results: this.phase === 'gameOver' ? this.results : null,
       players: [...this.players.values()].map(p => ({
         id: p.id, name: p.name, color: p.color,
         x: r2(p.x), z: r2(p.z), f: r2(p.facing),
         hp: Math.round(p.hp), st: p.stunned, im: p.immune > 0,
         al: p.alive, fall: r2(p.fallTimer), atk: p.attackCount, hit: p.hitCount,
         rg: r2(C.ATTACK_RANGE * p.mods.range), sz: r2(p.mods.size),
-        sc: p.score, ab: p.abilities, pk: p.picked,
+        vx: r2(p.vx), vz: r2(p.vz), sq: p.inputSeq ?? 0, bot: !!p.bot,
+        ms: r2(p.mods.speed), mf: r2(p.mods.friction), mr: r2(p.mods.slideResist), ctl: !p.stunned && p.dash <= 0 && p.air <= 0,
+        sc: p.score, kl: p.kills, rd: p.ready, ab: p.abilities, pk: p.picked,
         em: p.emoteTimer > 0 ? p.emote : -1,
         sk: p.skills, cd: p.skillCd.map(r2),
         sh: p.shield > 0, dash: p.dash > 0, air: p.airMax ? r2(Math.max(0, p.air) / p.airMax) : 0,
