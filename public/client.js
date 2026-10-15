@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Character, toon } from './js/character.js';
 import * as UI from './js/ui.js';
+import { isTouch, initTouch } from './js/touch.js';
 
 // ---------- 씬 기본 구성 ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -26,6 +27,7 @@ scene.add(sun);
 function resize() {
   renderer.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight;
+  camera.fov = camera.aspect < 1 ? 72 : 55; // 세로 화면이면 더 넓게
   camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
@@ -338,7 +340,7 @@ addEventListener('blur', () => keys.clear());
 let camYaw = 0; // 카메라가 바라보는 방향 (x,z 평면 각도)
 const canvas = renderer.domElement;
 canvas.addEventListener('click', () => {
-  if (mode !== 'game') return;
+  if (mode !== 'game' || isTouch) return; // 폰은 마우스 고정 대신 드래그로 시점
   if (document.pointerLockElement === canvas) attackQueued = true; // 고정 중 클릭 = 밀치기
   else canvas.requestPointerLock?.();
 });
@@ -351,15 +353,23 @@ function sendEmote(n) {
 }
 UI.initEmoteBar(sendEmote);
 
+const stick = initTouch({
+  canvas,
+  onAttack: () => { attackQueued = true; },
+  onSkill: i => { skillQueued = i; },
+  onLook: dx => { camYaw += dx * 0.008; },
+});
+
 function sendInput() {
   if (ws?.readyState !== 1) return;
   // 카메라 기준 이동: W = 카메라가 보는 방향
-  const fwd = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
-  const right = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+  // 키보드 + 폰 조이스틱 (조이스틱 위쪽 = 앞)
+  const fwd = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - stick.y;
+  const right = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + stick.x;
   const fx = Math.cos(camYaw), fz = Math.sin(camYaw);
   let x = fx * fwd - fz * right, z = fz * fwd + fx * right;
   const len = Math.hypot(x, z);
-  if (len > 0) { x /= len; z /= len; }
+  if (len > 1) { x /= len; z /= len; } // 조이스틱을 조금만 밀면 천천히
   ws.send(JSON.stringify({ t: 'input', x, z, attack: attackQueued, skill: skillQueued }));
   attackQueued = false; skillQueued = -1;
 }

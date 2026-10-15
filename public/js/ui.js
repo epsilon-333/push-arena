@@ -47,6 +47,7 @@ export function initTitle(onStart) {
     const name = input.value.trim() || `플레이어${Math.floor(Math.random() * 900 + 100)}`;
     try { localStorage.setItem('nickname', name); } catch {}
     $('title').classList.add('leaving');
+    document.body.classList.add('in-game');
     setTimeout(() => { $('title').hidden = true; $('hud').hidden = false; }, 500);
     onStart(name, mode);
   };
@@ -137,10 +138,10 @@ export function updateSkillHud(me) {
   el.hidden = false;
   el.innerHTML = [0, 1].map(i => {
     const sk = me.sk?.[i];
-    if (!sk) return `<div class="slot empty"><kbd>${'QE'[i]}</kbd></div>`;
+    if (!sk) return `<div class="slot empty" data-i="${i}"><kbd>${'QE'[i]}</kbd></div>`;
     const max = skillCdMax[sk] || 1, cd = me.cd[i];
     const pct = Math.min(100, (cd / max) * 100);
-    return `<div class="slot ${cd > 0 ? 'cooling' : 'ready'}" title="${skillName(sk)}">
+    return `<div class="slot ${cd > 0 ? 'cooling' : 'ready'}" data-i="${i}" title="${skillName(sk)}">
       <span class="slot-icon">${icon(SKILL_CARD[sk])}</span>
       <div class="slot-cd" style="--p:${pct}%"></div>
       ${cd > 0 ? `<span class="slot-num">${Math.ceil(cd)}</span>` : ''}
