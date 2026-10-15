@@ -1,0 +1,244 @@
+:root {
+  --ink: #16171d;
+  --paper: #f6f4f0;
+  --blue: #3f6fd8;
+  --font-title: 'Black Han Sans', 'Jua', sans-serif;
+  --font-ui: 'Jua', 'Malgun Gothic', sans-serif;
+}
+html, body { margin: 0; height: 100%; overflow: hidden; color: #fff; font-family: var(--font-ui); }
+body { background: radial-gradient(ellipse at 50% 35%, #3a3f78 0%, #1d1f3d 55%, #0e0f1f 100%); }
+[hidden] { display: none !important; }
+#stage, #stage canvas { position: fixed; inset: 0; display: block; }
+button { font-family: inherit; }
+
+kbd {
+  display: inline-block; min-width: 1.6em; padding: 2px 6px; margin: 0 2px;
+  border: 2px solid var(--ink); border-bottom-width: 4px; border-radius: 6px;
+  background: var(--paper); color: var(--ink); font-family: var(--font-ui); font-size: 14px; text-align: center;
+  text-shadow: none; line-height: 1.3; vertical-align: middle;
+}
+
+/* ---------- 표지 ---------- */
+#title {
+  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  padding: 8vh 16px 6vh; box-sizing: border-box;
+  background: linear-gradient(180deg, rgba(14,15,31,.55) 0%, rgba(14,15,31,0) 35%, rgba(14,15,31,0) 60%, rgba(14,15,31,.75) 100%);
+  transition: opacity .5s, transform .5s;
+}
+#title.leaving { opacity: 0; transform: scale(1.05); pointer-events: none; }
+.logo { text-align: center; animation: float 3s ease-in-out infinite; }
+.logo-sub { font-size: 20px; letter-spacing: .3em; opacity: .85; text-shadow: 0 2px 0 var(--ink); }
+.logo h1 {
+  margin: 4px 0 0; font-family: var(--font-title); font-weight: normal; font-size: clamp(56px, 11vw, 130px); line-height: .9;
+  color: var(--paper); letter-spacing: .02em;
+  -webkit-text-stroke: 6px var(--ink); paint-order: stroke fill;
+  text-shadow: 0 8px 0 var(--ink), 0 14px 30px rgba(0,0,0,.4);
+}
+.logo h1 span { display: block; color: var(--blue); font-size: .62em; letter-spacing: .25em; margin-left: .25em; }
+.start-box { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+#nickname {
+  width: 200px; padding: 12px 16px; font: inherit; font-size: 20px; text-align: center;
+  border: 3px solid var(--ink); border-radius: 14px; background: var(--paper); color: var(--ink); outline: none;
+  box-shadow: 0 5px 0 var(--ink);
+}
+#start {
+  padding: 12px 34px; font-size: 24px; color: #fff; cursor: pointer;
+  background: var(--blue); border: 3px solid var(--ink); border-radius: 14px; box-shadow: 0 6px 0 var(--ink);
+  transition: transform .1s, box-shadow .1s;
+}
+#start:hover { transform: translateY(-2px); box-shadow: 0 8px 0 var(--ink); }
+#start:active { transform: translateY(4px); box-shadow: 0 2px 0 var(--ink); }
+.controls { font-size: 16px; opacity: .9; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+.controls kbd.wide { padding: 2px 14px; }
+@keyframes float { 50% { transform: translateY(-8px); } }
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; inset: 0; pointer-events: none; }
+#scoreboard {
+  position: absolute; top: 14px; left: 14px; padding: 10px 12px; min-width: 200px;
+  background: rgba(22,23,29,.72); border: 2px solid rgba(255,255,255,.12); border-radius: 14px;
+}
+#scoreboard .row { display: grid; grid-template-columns: 14px 1fr auto; grid-template-rows: auto auto; column-gap: 8px; align-items: center; padding: 4px 0; }
+#scoreboard .row.out { opacity: .45; }
+#scoreboard .row.me .pname::after { content: ' (나)'; opacity: .6; font-size: 13px; }
+#scoreboard .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); box-shadow: 0 0 0 1px rgba(255,255,255,.3); }
+#scoreboard .pname { font-size: 17px; }
+#scoreboard .pips { display: flex; gap: 3px; }
+#scoreboard .pips i { width: 10px; height: 10px; border-radius: 3px; background: rgba(255,255,255,.15); transform: rotate(45deg) scale(.8); }
+#scoreboard .pips i.on { background: #ffd84a; box-shadow: 0 0 6px #ffd84a; }
+#scoreboard .abil { grid-column: 2 / 4; font-size: 13px; letter-spacing: 2px; min-height: 2px; }
+
+#rule {
+  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px; padding: 8px 18px; white-space: nowrap;
+  background: var(--paper); color: var(--ink); border: 3px solid var(--ink); border-radius: 999px; box-shadow: 0 4px 0 var(--ink);
+  font-size: 15px;
+}
+#rule b { font-size: 18px; font-weight: normal; }
+#rule .rule-icon { font-size: 20px; }
+
+#message {
+  position: absolute; top: 30%; width: 100%; text-align: center;
+  font-family: var(--font-title); font-size: 54px; color: var(--paper);
+  -webkit-text-stroke: 4px var(--ink); paint-order: stroke fill; text-shadow: 0 6px 0 var(--ink);
+}
+#message.big { font-size: 140px; top: 24%; }
+#message.pop { animation: pop .45s cubic-bezier(.2, 1.6, .4, 1); }
+@keyframes pop { from { transform: scale(.3); opacity: 0; } }
+#help { position: absolute; left: 14px; bottom: 14px; display: flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 14px; opacity: .9; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+
+/* ---------- 이름표 ---------- */
+#labels { position: fixed; inset: 0; pointer-events: none; }
+.label { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.label .name {
+  padding: 1px 9px; font-size: 13px; border: 2px solid var(--ink); border-radius: 999px; color: #fff;
+  text-shadow: 0 1px 0 var(--ink); white-space: nowrap;
+}
+.label.me .name { box-shadow: 0 0 0 2px #fff; }
+.hpbar { width: 52px; height: 7px; background: var(--ink); border: 2px solid var(--ink); border-radius: 5px; overflow: hidden; }
+.hpbar > div { height: 100%; background: linear-gradient(#7cf29a, #2ecc71); border-radius: 3px; transition: width .15s; }
+.label.stunned .hpbar > div { background: linear-gradient(#ffb36b, #ff6b4a); }
+
+/* ---------- 능력 카드 ---------- */
+#cards {
+  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px;
+  background: radial-gradient(ellipse at center, rgba(14,15,31,.6), rgba(14,15,31,.92));
+  animation: fade .3s;
+}
+@keyframes fade { from { opacity: 0; } }
+.cards-title {
+  font-family: var(--font-title); font-size: 38px; color: var(--paper);
+  -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; text-shadow: 0 5px 0 var(--ink);
+}
+#cards .list { display: flex; gap: 26px; flex-wrap: wrap; justify-content: center; perspective: 1200px; }
+#cards .timer { font-size: 18px; opacity: .85; }
+
+.card {
+  --rx: 0deg; --ry: 0deg;
+  width: 190px; height: 270px; padding: 0; border: 0; background: none; cursor: pointer;
+  transform: translateY(110vh) rotate(calc((var(--i) - 1) * 12deg));
+  transition: transform .6s cubic-bezier(.2, .9, .3, 1.1), opacity .4s, filter .4s;
+}
+.card.dealt { transform: translateY(0) rotate(0); }
+.card.dealt:hover { transform: translateY(-14px) scale(1.04); }
+.card-inner {
+  position: relative; width: 100%; height: 100%; transform-style: preserve-3d;
+  transform: rotateY(180deg); transition: transform .55s cubic-bezier(.3, 1.3, .5, 1);
+}
+.card.flipped .card-inner { transform: rotateX(var(--rx)) rotateY(var(--ry)); transition: transform .15s; }
+.card.flipped:not(:hover) .card-inner { transition: transform .55s cubic-bezier(.3, 1.3, .5, 1); }
+.face {
+  position: absolute; inset: 0; border-radius: 16px; backface-visibility: hidden; box-sizing: border-box;
+  border: 4px solid var(--ink); box-shadow: 0 10px 0 var(--ink), 0 18px 30px rgba(0,0,0,.45);
+}
+.face.back {
+  transform: rotateY(180deg); display: flex; align-items: center; justify-content: center;
+  background: repeating-linear-gradient(45deg, #2b3fa0 0 12px, #3550c0 12px 24px);
+}
+.back-mark {
+  width: 76px; height: 76px; border-radius: 50%; background: var(--paper); border: 4px solid var(--ink);
+  display: flex; align-items: center; justify-content: center; font-family: var(--font-title); font-size: 44px; color: var(--blue);
+}
+.face.front {
+  --c: #ff5d5d; --c2: #b8303a;
+  display: flex; flex-direction: column; padding: 10px; gap: 8px; color: var(--ink);
+  background: linear-gradient(160deg, var(--paper) 0%, #e6e1d8 100%);
+}
+.card-top {
+  position: relative; background: var(--c); border: 3px solid var(--ink); border-radius: 10px; padding: 5px 0; text-align: center;
+}
+.card-name { font-size: 21px; color: #fff; -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; }
+.card-art {
+  flex: 1; display: flex; align-items: center; justify-content: center; border: 3px solid var(--ink); border-radius: 10px;
+  background: radial-gradient(circle at 50% 45%, #fff 0%, var(--c) 70%, var(--c2) 100%);
+  font-size: 64px; overflow: hidden; position: relative;
+}
+.card-art::after { /* 반짝이는 광택 */
+  content: ''; position: absolute; inset: -50%; background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,.55) 50%, transparent 60%);
+  transform: translateX(-60%); transition: transform .6s;
+}
+.card:hover .card-art::after { transform: translateX(60%); }
+.card-art span { filter: drop-shadow(0 4px 0 rgba(0,0,0,.25)); }
+.card-desc { font-size: 18px; text-align: center; padding: 4px 0; }
+/* 종류별 색: 스탯 파랑, 스킬 빨강, 규칙 보라, 트레이드오프 주황 */
+.face.front.kind-stat { --c: #5d95ff; --c2: #2a56c4; }
+.face.front.kind-skill { --c: #ff6b6b; --c2: #c23a3a; }
+.face.front.kind-rule { --c: #b07bff; --c2: #6b3fc4; }
+.face.front.kind-trade { --c: #ffb347; --c2: #c9761a; }
+.card-rarity {
+  position: absolute; top: -12px; left: 50%; transform: translateX(-50%); padding: 0 10px; font-size: 12px;
+  border: 2px solid var(--ink); border-radius: 999px; background: var(--paper); color: var(--ink); white-space: nowrap;
+}
+.rarity-rare .card-rarity { background: #5db8ff; color: #fff; }
+.rarity-legend .card-rarity { background: linear-gradient(90deg, #ffd84a, #ff9f43); color: var(--ink); }
+.card-key { position: absolute; top: 6px; right: 6px; font-size: 11px; padding: 0 6px; background: var(--ink); color: #fff; border-radius: 6px; font-weight: normal; }
+.card-desc { font-size: 16px; line-height: 1.35; }
+.card-foot { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
+.card-kind, .card-tag { font-size: 11px; padding: 0 8px; border-radius: 999px; border: 2px solid var(--ink); }
+.card-kind { color: #fff; background: var(--c2); }
+.card-tag { background: #fff; color: var(--ink); }
+/* 희귀: 파란 빛, 전설: 금빛 + 반짝임 */
+.card.rarity-rare .face.front { box-shadow: 0 10px 0 var(--ink), 0 0 22px rgba(93,184,255,.75); }
+.card.rarity-legend .face.front { box-shadow: 0 10px 0 var(--ink), 0 0 30px rgba(255,200,60,.9); animation: legend-glow 1.6s ease-in-out infinite; }
+.card.rarity-legend .face.front { background: linear-gradient(160deg, #fff8e0 0%, #ffe9a8 100%); }
+@keyframes legend-glow { 50% { box-shadow: 0 10px 0 var(--ink), 0 0 46px rgba(255,200,60,1); } }
+
+/* 스킬 교체 선택 */
+#swap-skill {
+  padding: 14px 18px; background: var(--paper); color: var(--ink); border: 4px solid var(--ink); border-radius: 16px; box-shadow: 0 6px 0 var(--ink);
+  text-align: center; animation: pop .3s cubic-bezier(.2, 1.6, .4, 1);
+}
+.swap-title { font-size: 18px; margin-bottom: 10px; }
+.swap-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.swap-row button {
+  padding: 8px 16px; font-size: 16px; cursor: pointer; background: #fff; color: var(--ink);
+  border: 3px solid var(--ink); border-radius: 12px; box-shadow: 0 4px 0 var(--ink);
+}
+.swap-row button:hover { background: #ffe9a8; }
+.swap-row button.cancel { background: #ddd; }
+
+/* ---------- 스킬 칸 (Q·E) ---------- */
+#skills { position: absolute; left: 50%; bottom: 54px; transform: translateX(-50%); display: flex; gap: 12px; }
+#skills .slot {
+  position: relative; width: 62px; height: 62px; border-radius: 16px; overflow: hidden;
+  background: var(--paper); border: 3px solid var(--ink); box-shadow: 0 4px 0 var(--ink);
+  display: flex; align-items: center; justify-content: center;
+}
+#skills .slot.empty { background: rgba(246,244,240,.25); }
+#skills .slot.ready { box-shadow: 0 4px 0 var(--ink), 0 0 12px rgba(255,216,74,.8); }
+#skills .slot-icon { font-size: 32px; }
+#skills .slot-cd { position: absolute; inset: 0; background: conic-gradient(rgba(22,23,29,.7) var(--p), transparent 0); }
+#skills .slot-num { position: absolute; font-family: var(--font-title); font-size: 26px; color: #fff; -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; }
+#skills kbd { position: absolute; left: 2px; top: 2px; min-width: 0; padding: 0 4px; font-size: 11px; border-bottom-width: 2px; }
+
+#cards.done .card { cursor: default; opacity: .25; filter: grayscale(.8); transform: translateY(30px) scale(.92); }
+#cards.done .card.chosen { opacity: 1; filter: none; transform: translateY(-20px) scale(1.1); }
+#cards.done .card.chosen .face.front { box-shadow: 0 10px 0 var(--ink), 0 0 0 6px #ffd84a, 0 0 40px #ffd84a; }
+#title .bottom { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+#practice {
+  padding: 8px 22px; font-size: 18px; color: var(--ink); cursor: pointer;
+  background: var(--paper); border: 3px solid var(--ink); border-radius: 12px; box-shadow: 0 4px 0 var(--ink);
+}
+#practice:hover { background: #fff; }
+#practice:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+
+/* ---------- 감정 이모티콘 ---------- */
+#emotes { position: absolute; right: 14px; bottom: 14px; display: flex; gap: 8px; pointer-events: auto; }
+#emotes button {
+  position: relative; width: 52px; height: 52px; font-size: 28px; cursor: pointer;
+  background: var(--paper); border: 3px solid var(--ink); border-radius: 50%; box-shadow: 0 4px 0 var(--ink);
+}
+#emotes button:hover { transform: translateY(-3px); }
+#emotes button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+#emotes kbd { position: absolute; right: -6px; bottom: -6px; min-width: 0; padding: 0 4px; font-size: 11px; border-bottom-width: 2px; }
+.label .bubble {
+  position: relative; margin-bottom: 4px; padding: 2px 8px; font-size: 26px; line-height: 1.2;
+  background: var(--paper); border: 3px solid var(--ink); border-radius: 14px;
+}
+.label .bubble::after {
+  content: ''; position: absolute; left: 50%; bottom: -9px; width: 10px; height: 10px; transform: translateX(-50%) rotate(45deg);
+  background: var(--paper); border-right: 3px solid var(--ink); border-bottom: 3px solid var(--ink);
+}
+.label .bubble.pop { animation: pop .4s cubic-bezier(.2, 1.6, .4, 1); }
+
+.controls-sub { font-size: 13px; opacity: .7; text-shadow: 0 1px 4px rgba(0,0,0,.9); }

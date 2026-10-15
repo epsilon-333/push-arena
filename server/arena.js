@@ -1,0 +1,104 @@
+// 육각형 타일 맵 (pointy-top, axial 좌표 q/r).
+// 타일 상태: alive → cracked(균열) → crumbling(무너지는 중) → gone → alive
+const SQRT3 = Math.sqrt(3);
+const STATE_CODE = { gone: 0, alive: 1, crumbling: 2, cracked: 3 };
+
+export class Arena {
+  constructor(rings, tileSize) {
+    this.rings = rings;
+    this.size = tileSize; // 육각형 꼭짓점까지 거리
+    this.tiles = new Map(); // "q,r" -> { q, r, x, z, state, timer }
+    this.version = 0;       // 타일 상태가 바뀔 때마다 증가
+    this.reset();
+  }
+
+  reset() {
+    this.tiles.clear();
+    this.standing = new Map(); // 플레이어 id -> 마지막으로 서 있던 타일 key
+    const N = this.rings;
+    for (let q = -N; q <= N; q++) {
+      for (let r = Math.max(-N, -q - N); r <= Math.min(N, -q + N); r++) {
+        const { x, z } = this.toWorld(q, r);
+        this.tiles.set(`${q},${r}`, { q, r, x, z, state: 'alive', timer: 0 });
+      }
+    }
+    this.version++;
+  }
+
+  toWorld(q, r) {
+    return { x: this.size * SQRT3 * (q + r / 2), z: this.size * 1.5 * r };
+  }
+
+  // 월드 좌표가 속한 타일 (없으면 null)
+  tileAt(x, z) {
+    const fq = (SQRT3 / 3 * x - z / 3) / this.size;
+    const fr = (2 / 3 * z) / this.size;
+    // cube 좌표 반올림
+    const fs = -fq - fr;
+    let q = Math.round(fq), r = Math.round(fr), s = Math.round(fs);
+    const dq = Math.abs(q - fq), dr = Math.abs(r - fr), ds = Math.abs(s - fs);
+    if (dq > dr && dq > ds) q = -r - s;
+    else if (dr > ds) r = -q - s;
+    return this.tiles.get(`${q},${r}`) ?? null;
+  }
+
+  isGround(x, z) {
+    const t = this.tileAt(x, z);
+    return !!t && t.state !== 'gone';
+  }
+
+  // 바닥 붕괴: 처음 밟으면 균열, 균열 난 타일을 다시 밟으면 crumbleTime 뒤 사라짐,
+  // 사라진 타일은 respawnTime 뒤 다시 생김. "밟기" = 다른 타일에서 이 타일로 들어온 순간.
+  // walkers: [{ id, x, z }]
+  updateCrumble(dt, walkers, crumbleTime, respawnTime) {
+    for (const w of walkers) {
+      const t = this.tileAt(w.x, w.z);
+      const key = t ? `${t.q},${t.r}` : null;
+      if (key === this.standing.get(w.id)) continue; // 같은 타일에 계속 서 있음
+      this.standing.set(w.id, key);
+      if (!t) continue;
+      if (t.state === 'alive') { t.state = 'cracked'; this.version++; }
+      else if (t.state === 'cracked') { t.state = 'crumbling'; t.timer = crumbleTime; this.version++; }
+    }
+    for (const t of this.tiles.values()) {
+      if (t.state !== 'crumbling' && t.state !== 'gone') continue;
+      t.timer -= dt;
+      if (t.timer > 0) continue;
+      if (t.state === 'crumbling') { t.state = 'gone'; t.timer = respawnTime; }
+      else t.state = 'alive';
+      this.version++;
+    }
+  }
+
+  // 스킬(내려찍기)로 타일에 금 내기: 정상 → 균열, 균열 → 무너짐
+  crackAt(x, z, crumbleTime) {
+    const t = this.tileAt(x, z);
+    if (!t) return;
+    if (t.state === 'alive') { t.state = 'cracked'; this.version++; }
+    else if (t.state === 'cracked') { t.state = 'crumbling'; t.timer = crumbleTime; this.version++; }
+  }
+
+  // 블랙홀: 중심 타일 한 칸을 뚫었다가, 끝나면 메운다
+  punchHole(x, z) {
+    const t = this.tileAt(x, z);
+    if (!t) return null;
+    t.state = 'gone';
+    t.timer = Infinity; // 저절로 다시 생기지 않음
+    this.version++;
+    return t;
+  }
+
+  fillHole(t) {
+    if (!t || t.state !== 'gone' || t.timer !== Infinity) return;
+    t.state = 'alive';
+    t.timer = 0;
+    this.version++;
+  }
+
+  // 시작 위치용: 맵 중심에서 이 정도 떨어진 곳은 항상 타일 위
+  get spawnRadius() { return this.size * 1.5 * this.rings * 0.6; }
+
+  serialize() {
+    return { size: this.size, version: this.version, tiles: [...this.tiles.values()].map(t => [t.q, t.r, STATE_CODE[t.state]]) };
+  }
+}

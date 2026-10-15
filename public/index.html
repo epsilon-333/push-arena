@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Push Arena</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Jua&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">{ "imports": { "three": "/three/three.module.js" } }</script>
+</head>
+<body>
+  <div id="stage"></div>
+
+  <!-- 표지 -->
+  <div id="title">
+    <div class="logo">
+      <div class="logo-sub">밀고 · 버티고 · 살아남기</div>
+      <h1>PUSH<span>ARENA</span></h1>
+    </div>
+    <div class="bottom">
+    <div class="start-box">
+      <input id="nickname" maxlength="10" placeholder="닉네임" autocomplete="off">
+      <button id="start">게임 시작</button>
+    </div>
+    <button id="practice">🤖 봇이랑 연습하기</button>
+    <div class="controls"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 <kbd class="wide">Space</kbd> 밀치기 <kbd>마우스</kbd> 시점</div>
+      <div class="controls-sub">게임 중 화면을 클릭하면 마우스로 시점을 돌려요 (Esc로 해제)</div>
+    </div>
+  </div>
+
+  <!-- 게임 HUD -->
+  <div id="hud" hidden>
+    <div id="scoreboard"></div>
+    <div id="rule" hidden></div>
+    <div id="message"></div>
+    <div id="skills" hidden></div>
+    <div id="emotes"></div>
+    <div id="help"><kbd>WASD</kbd> 이동 <kbd>Space</kbd> 밀치기 <kbd>Q</kbd><kbd>E</kbd> 스킬 <kbd>마우스</kbd> 시점 <kbd>1~4</kbd> 감정</div>
+  </div>
+  <div id="labels"></div>
+
+  <!-- 능력 선택 -->
+  <div id="cards" hidden>
+    <div class="cards-title">능력 카드를 한 장 고르세요</div>
+    <div class="list"></div>
+    <div class="timer"></div>
+    <div id="swap-skill" hidden></div>
+  </div>
+
+  <script type="module" src="client.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+# Render 배포 설정 (Blueprint). 무료 웹 서비스 하나로 게임 서버 + 화면을 같이 제공한다.
+services:
+  - type: web
+    name: push-arena
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
