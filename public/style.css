@@ -386,3 +386,48 @@ body.touch #mute { top: calc(12px + env(safe-area-inset-top)); right: calc(196px
 #volume span { min-width: 2.2em; text-align: right; font-size: 14px; }
 body.touch #volume { top: calc(58px + env(safe-area-inset-top)); right: calc(150px + env(safe-area-inset-right)); }
 @media (orientation: portrait) { body.touch #volume { right: calc(60px + env(safe-area-inset-right)); top: calc(12px + env(safe-area-inset-top)); } }
+
+/* 겹치는 순서: 3D 화면 < 머리 위 이름표 < HUD(점수판, 가운데 큰 글씨) < 폰 조작 < 카드/대기실/순위 < 연결 중 */
+#labels { z-index: 1; }
+#hud { z-index: 2; }
+#touch { z-index: 3; }
+#cards, #lobby, #results { z-index: 4; }
+#connecting { z-index: 10; }
+
+/* ---------- 이모티콘 고르기 ---------- */
+#btn-emotes {
+  padding: 8px 22px; font-size: 16px; color: var(--ink); cursor: pointer;
+  background: #ffe9a8; border: 3px solid var(--ink); border-radius: 12px; box-shadow: 0 4px 0 var(--ink);
+}
+#emote-picker { position: fixed; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; background: rgba(14,15,31,.7); padding: 16px; box-sizing: border-box; }
+.ep-box {
+  width: min(460px, 100%); max-height: 100%; overflow: auto; padding: 16px; box-sizing: border-box; text-align: center;
+  background: var(--paper); color: var(--ink); border: 4px solid var(--ink); border-radius: 20px; box-shadow: 0 8px 0 var(--ink);
+}
+.ep-title { font-family: var(--font-title); font-size: 24px; }
+.ep-count { font-family: var(--font-ui); font-size: 16px; color: var(--blue); }
+.ep-sub { font-size: 13px; opacity: .65; margin: 4px 0 12px; }
+.ep-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.ep-grid button {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; cursor: pointer;
+  background: #fff; color: var(--ink); border: 3px solid var(--ink); border-radius: 12px; font-family: inherit;
+}
+.ep-grid button.on { background: #ffe9a8; box-shadow: 0 0 0 3px var(--blue); }
+.ep-icon { font-size: 28px; }
+.ep-text { font-size: 12px; }
+.ep-order { position: absolute; top: -8px; right: -6px; width: 22px; height: 22px; line-height: 22px; border-radius: 50%; background: var(--blue); color: #fff; font-size: 13px; border: 2px solid var(--ink); }
+.ep-buttons { display: flex; gap: 10px; justify-content: center; margin-top: 14px; }
+.ep-buttons button { padding: 8px 24px; font-size: 16px; cursor: pointer; border: 3px solid var(--ink); border-radius: 12px; box-shadow: 0 4px 0 var(--ink); }
+.ep-done { background: var(--blue); color: #fff; }
+.ep-done:disabled { background: #aab6d6; cursor: default; }
+.ep-cancel { background: #fff; color: var(--ink); }
+/* 말풍선: 이모지 + 도발 문구 */
+.label .bubble { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.label .bubble .b-icon { font-size: 24px; }
+.label .bubble .b-text { font-size: 14px; color: var(--ink); font-family: var(--font-title); }
+
+#btn-bots {
+  display: block; width: 100%; margin-bottom: 12px; padding: 8px; font-size: 15px; cursor: pointer;
+  background: #e3f6e8; color: var(--ink); border: 3px solid var(--ink); border-radius: 12px; box-shadow: 0 3px 0 var(--ink);
+}
+#btn-bots.off { background: #f3dede; }

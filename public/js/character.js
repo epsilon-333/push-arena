@@ -156,7 +156,7 @@ export class Character {
   playPush() { this.push = 0; }
   playHit() { this.hit = 0; }
 
-  // s: { speed, stunned, falling, winner, emoteFace }
+  // s: { speed, stunned, falling, winner, emoteFace, gesture }
   update(dt, t, s) {
     this.push = Math.min(1, this.push + dt / 0.38);
     this.hit = Math.min(1, this.hit + dt / 0.35);
@@ -211,6 +211,32 @@ export class Character {
       bob = j * 0.25;
       for (const a of arm) { a.z = 0.3; a.x = 2.4; }
     }
+    // 이모티콘 동작 (arm[0] = 왼팔, arm[1] = 오른팔 / z: 앞뒤, x: 옆으로 들기)
+    let headTilt = 0;
+    if (s.gesture && !s.stunned && !s.falling) {
+      switch (s.gesture) {
+        case 'wave': // 손 흔들기
+          arm[1].x = 2.7; arm[1].z = 0.35 * Math.sin(t * 14);
+          break;
+        case 'point': // 손가락질 (덤벼!)
+          arm[1].z = 1.6; arm[1].x = 0.05; lean -= 0.12;
+          arm[0].z = -0.3;
+          break;
+        case 'flex': // 힘자랑
+          for (const a of arm) { a.x = 1.5 + Math.sin(t * 10) * 0.12; a.z = 0.25; }
+          bob = Math.abs(Math.sin(t * 5)) * 0.06;
+          break;
+        case 'dance': // 신나서 들썩
+          lean = Math.sin(t * 9) * 0.28;
+          bob = Math.abs(Math.sin(t * 9)) * 0.18;
+          arm[0].x = 1.4 + Math.sin(t * 9) * 0.8; arm[1].x = 1.4 - Math.sin(t * 9) * 0.8;
+          break;
+        case 'taunt': // 메롱: 뒤로 젖히고 고개 까딱
+          lean = 0.22; headTilt = Math.sin(t * 10) * 0.25;
+          for (const a of arm) { a.z = -0.5; a.x = 0.6; }
+          break;
+      }
+    }
 
     // 적용 (부드럽게)
     const k = 1 - Math.exp(-dt * 18);
@@ -223,7 +249,7 @@ export class Character {
     this.rig.rotation.z += (lean - this.rig.rotation.z) * k;
     this.rig.position.y = bob;
     this.rig.scale.set(squash, 1 / squash, 1);
-    this.head.rotation.x = s.stunned ? Math.sin(t * 6) * 0.15 : 0;
+    this.head.rotation.x = s.stunned ? Math.sin(t * 6) * 0.15 : headTilt;
 
     this.stars.visible = !!s.stunned;
     if (s.stunned) {

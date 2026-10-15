@@ -9,6 +9,7 @@ export const CONFIG = {
   HEX_RINGS: 7,           // 중앙 타일 바깥으로 몇 겹
   HEX_SIZE: 1.2,          // 타일 크기 (꼭짓점까지 거리)
   PLAYER_RADIUS: 0.6,
+  FALL_MARGIN: 0.35,      // 몸 중심이 바닥 밖이어도 이 거리 안에 바닥이 있으면 안 떨어짐 (클수록 너그러움)
 
   // 라운드마다 이 중 하나를 랜덤 적용
   // 테스트할 때는 환경변수 MAP_RULE=tilt 처럼 하나만 고정 가능
@@ -39,6 +40,7 @@ export const CONFIG = {
   FRICTION: 4.5,          // 클수록 빨리 멈춤 (낮으면 살짝 미끄러짐)
   ICE_FRICTION: 1.1,      // 빙판길 마찰
   ICE_ACCEL_MULT: 0.55,   // 빙판길에서는 가속도 덜 붙음
+  ICE_KNOCKBACK_MULT: 0.7, // 빙판길 밀치기 세기 (일반의 70%)
 
   ATTACK_RANGE: 2.6,      // 캐릭터 중심 기준 (밀치기가 닿는 거리)
   ATTACK_ANGLE: Math.PI * 0.4, // 정면 기준 좌우 허용 각도 (72도)
@@ -53,7 +55,7 @@ export const CONFIG = {
   STUN_RECOVER_HP: 50,    // 이 체력이 되면 기절 해제
   STUN_IMMUNE_TIME: 1.5,  // 기절 해제 후 재기절 면역 시간
 
-  EMOTE_COUNT: 4,         // 이모티콘 종류 수 (화면 쪽 목록과 맞춤)
+  EMOTE_COUNT: 16,        // 이모티콘 종류 수 (화면 쪽 js/ui.js EMOTES 목록과 맞춤)
   EMOTE_TIME: 2.5,        // 말풍선 표시 시간
   EMOTE_COOLDOWN: 0.8,    // 연속 사용 제한
 

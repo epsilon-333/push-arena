@@ -31,6 +31,7 @@ export class Room {
     this.nextPlayerNum = 1;
     this.lobbyTimer = C.LOBBY_TIME; // 대기실: 이 시간이 지나면 빈자리를 봇으로 채워 자동 시작
     this.startRequested = false;
+    this.botsEnabled = true; // 대기실 설정: 빈자리를 AI로 채울지
   }
 
   // 사람 기준으로 꽉 찼는지 (봇 자리는 사람이 오면 비워줌)
@@ -112,6 +113,14 @@ export class Room {
   // 대기실에서 "시작하기"
   requestStart(id) {
     if (this.phase === 'waiting' && this.players.has(id)) this.startRequested = true;
+  }
+
+  // 대기실에서 "빈자리 AI 채우기" 켬/끔
+  setBots(id, on) {
+    if (this.phase === 'waiting' && this.players.has(id) && !this.practice) {
+      this.botsEnabled = !!on;
+      if (!on) for (const p of [...this.players.values()]) if (p.bot) this.players.delete(p.id);
+    }
   }
 
   // 빈자리(최대 인원까지)를 봇으로 채움
@@ -211,8 +220,14 @@ export class Room {
       case 'waiting': // 대기실: 누가 "시작하기"를 누르거나 시간이 다 되면 시작
         this.message = '';
         this.lobbyTimer -= dt;
-        if (this.practice || this.startRequested || this.lobbyTimer <= 0) {
-          this.fillBots();
+        // AI를 끄면 사람이 2명 이상일 때만 시작 (자동 시작도 안 함)
+        if (!this.practice && !this.botsEnabled && this.humans.length < C.MIN_PLAYERS) {
+          this.startRequested = false;
+          this.lobbyTimer = C.LOBBY_TIME;
+          break;
+        }
+        if (this.practice || this.startRequested || (this.botsEnabled && this.lobbyTimer <= 0)) {
+          if (this.botsEnabled) this.fillBots();
           this.startRequested = false;
           this.startPicking(); // 게임 시작: 첫 라운드 전에 카드 1장
         }
@@ -286,7 +301,11 @@ export class Room {
   // 떨어진 사람을 최근(4초 안)에 민 사람에게 처치 기록
   creditKill(p) {
     const killer = this.players.get(p.lastHitBy);
-    if (killer && killer !== p && this.time - p.lastHitTime < 4) killer.kills++;
+    if (killer && killer !== p && this.time - p.lastHitTime < 4) {
+      killer.kills++;
+      // 봇은 떨어뜨리면 가끔 도발 (메롱, 잘 가, 겁쟁이, 약하다)
+      if (killer.bot && Math.random() < 0.6) this.emote(killer.id, [4, 5, 8, 7][Math.floor(Math.random() * 4)]);
+    }
   }
 
   // ---------- 물리/전투 ----------
@@ -430,7 +449,7 @@ export class Room {
       if (p.fallTimer > 0) {
         p.fallTimer += dt;
         if (p.fallTimer >= C.FALL_TIME) { p.alive = false; this.creditKill(p); }
-      } else if (p.air <= 0 && !this.arena.isGround(p.x, p.z)) {
+      } else if (p.air <= 0 && !this.arena.isStanding(p.x, p.z, C.FALL_MARGIN * p.mods.size)) {
         p.fallTimer = dt;
         p.dash = 0;
         p.vx *= 0.35; p.vz *= 0.35; // 떨어지기 시작하면 옆으로 덜 미끄러짐 (구멍 안으로 쑥)
@@ -458,7 +477,8 @@ export class Room {
   // 넉백 하나로 모음: 방어막, 공중, 무게, 기절, 빙판, 반사
   knock(t, nx, nz, strength, source) {
     if (t.shield > 0 || t.air > 0) return;
-    const kb = C.KNOCKBACK * strength / t.mods.weight * (t.stunned ? C.STUN_KNOCKBACK_MULT : 1);
+    const kb = C.KNOCKBACK * strength / t.mods.weight * (t.stunned ? C.STUN_KNOCKBACK_MULT : 1)
+      * (this.rule === 'ice' ? C.ICE_KNOCKBACK_MULT : 1);
     t.vx += nx * kb;
     t.vz += nz * kb;
     t.hitCount++;
@@ -579,6 +599,7 @@ export class Room {
       t: 'state',
       phase: this.phase,
       lobby: this.phase === 'waiting' ? Math.max(0, Math.ceil(this.lobbyTimer)) : 0,
+      bots: this.botsEnabled,
       timer: r2(Math.max(0, this.timer)),
       message: this.message,
       rule: this.rule,

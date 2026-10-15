@@ -74,6 +74,7 @@ wss.on('connection', socket => {
     else if (msg.t === 'pick') room.pick(id, msg.id, msg.slot);
     else if (msg.t === 'restart') room.restart(id);
     else if (msg.t === 'start') room.requestStart(id);
+    else if (msg.t === 'bots') room.setBots(id, msg.on);
     else if (msg.t === 'emote') room.emote(id, msg.n);
   });
 

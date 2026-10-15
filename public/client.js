@@ -384,7 +384,10 @@ function playPhaseSounds(s, me) {
   if (s.phase === 'roundEnd') Sound.play(me?.al ? 'win' : 'lose');
   if (s.phase === 'gameOver') Sound.play(s.results?.[0]?.id === myId ? 'win' : 'lose');
 }
-UI.initLobby(() => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'start' })));
+UI.initLobby(
+  () => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'start' })),
+  on => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'bots', on })),
+);
 UI.initResults(
   () => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'restart' })),
   () => location.reload(), // 처음 화면으로
@@ -398,7 +401,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Space') { if (!e.repeat) attackQueued = true; e.preventDefault(); }
   if (!e.repeat && (e.code === 'KeyQ' || e.code === 'KeyE')) skillQueued = e.code === 'KeyQ' ? 0 : 1; // 스킬
   const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(e.code);
-  if (n >= 0 && !e.repeat) sendEmote(n);
+  if (n >= 0 && !e.repeat) sendEmote(UI.emoteSlot(n)); // 1~4번 칸에 고른 이모티콘
   keys.add(e.code);
 });
 addEventListener('keyup', e => keys.delete(e.code));
@@ -406,6 +409,9 @@ addEventListener('blur', () => keys.clear());
 
 // 시점: 마우스 (화면 클릭하면 마우스 고정, Esc로 해제). Q/E는 스킬
 let camYaw = 0; // 카메라가 바라보는 방향 (x,z 평면 각도)
+// 폴가이즈식 카메라: 자동으로 돌지 않고 마우스/드래그로만 돌림. 뒤로 가면 캐릭터가 카메라 쪽으로 뛰어옴.
+let moveBack = false, backView = 0;
+function manualLook(d) { camYaw += d; }
 const canvas = renderer.domElement;
 canvas.addEventListener('click', () => {
   if (mode !== 'game' || isTouch) return; // 폰은 마우스 고정 대신 드래그로 시점
@@ -413,13 +419,14 @@ canvas.addEventListener('click', () => {
   else canvas.requestPointerLock?.();
 });
 addEventListener('mousemove', e => {
-  if (document.pointerLockElement === canvas) camYaw += e.movementX * 0.0035;
+  if (document.pointerLockElement === canvas) manualLook(e.movementX * 0.0035);
 });
 
 function sendEmote(n) {
   if (ws?.readyState === 1) ws.send(JSON.stringify({ t: 'emote', n }));
 }
 UI.initEmoteBar(sendEmote);
+UI.initEmotePicker();
 // 음량: 스피커 버튼을 누르면 슬라이더가 열림
 const muteBtn = document.getElementById('mute');
 const volBox = document.getElementById('volume');
@@ -439,7 +446,7 @@ const stick = initTouch({
   canvas,
   onAttack: () => { attackQueued = true; },
   onSkill: i => { skillQueued = i; },
-  onLook: dx => { camYaw += dx * 0.008; },
+  onLook: dx => manualLook(dx * 0.008),
 });
 
 // ---------- 클라이언트 예측 ----------
@@ -486,6 +493,7 @@ function sendInput() {
   // 키보드 + 폰 조이스틱 (조이스틱 위쪽 = 앞)
   const fwd = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - stick.y;
   const right = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + stick.x;
+  moveBack = fwd < -0.3; // 뒤로 가는 중이면 카메라를 살짝 뒤로 물림
   const fx = Math.cos(camYaw), fz = Math.sin(camYaw);
   let x = fx * fwd - fz * right, z = fz * fwd + fx * right;
   const len = Math.hypot(x, z);
@@ -539,14 +547,17 @@ function frame(now) {
   } else {
     const me = views.get(myId);
     const k = 1 - Math.exp(-dt * 6);
+    backView += ((moveBack && me?.state?.al ? 1 : 0) - backView) * (1 - Math.exp(-dt * 3));
     if (me?.state?.al && me.state.fall < 0.7) {
       // 내 캐릭터 뒤에서 따라가기. 떨어지기 시작해도 0.7초 동안은 그 자리에서 떨어지는 모습을 내려다봄
       const fx = Math.cos(camYaw), fz = Math.sin(camYaw);
       const falling = me.state.fall > 0;
       const pos = board.localToWorld(tmp.copy(me.char.root.position));
       const groundY = falling ? 0 : pos.y;
-      if (!falling) camGoal.set(pos.x - fx * 9.5, groundY + 6.5, pos.z - fz * 9.5);
-      lookGoal.set(pos.x + (falling ? 0 : fx * 5), pos.y, pos.z + (falling ? 0 : fz * 5));
+      // 평소: 멀고 높게 (주변이 넓게 보임). 뒤로 걷는 중(backView → 1): 살짝 더 물러나고 올라감
+      const dist = 12 + 2 * backView, height = 8.5 + 1.5 * backView, ahead = 3 - 2 * backView;
+      if (!falling) camGoal.set(pos.x - fx * dist, groundY + height, pos.z - fz * dist);
+      lookGoal.set(pos.x + (falling ? 0 : fx * ahead), pos.y, pos.z + (falling ? 0 : fz * ahead));
     } else {
       // 탈락/대기 중: 맵 전체 보기
       camGoal.copy(GAME_CAM.pos); lookGoal.copy(GAME_CAM.look);
@@ -636,7 +647,7 @@ function frame(now) {
     v.speed += (sp - v.speed) * 0.3;
     v.prev.x = root.position.x; v.prev.z = root.position.z;
 
-    v.char.update(dt, t, { speed: v.speed, stunned: p.st, falling: p.fall > 0, winner: winnerPhase && p.al, emoteFace: UI.EMOTES[p.em]?.face });
+    v.char.update(dt, t, { speed: v.speed, stunned: p.st, falling: p.fall > 0, winner: winnerPhase && p.al, emoteFace: UI.EMOTES[p.em]?.face, gesture: UI.EMOTES[p.em]?.gesture });
     root.visible = !(p.im && Math.floor(t * 12) % 2 === 0) || p.fall > 0; // 면역 중 깜빡임
 
     if (v.pushQueued) { spawnPushWave(root, v.pushQueued); v.pushQueued = 0; }

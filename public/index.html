@@ -24,6 +24,7 @@
       <button id="start">게임 시작</button>
     </div>
     <button id="practice">🤖 봇이랑 연습하기</button>
+    <button id="btn-emotes">😜 이모티콘 고르기</button>
     <div class="controls"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 <kbd class="wide">Space</kbd> 밀치기 <kbd>마우스</kbd> 시점</div>
       <div class="controls-sub">게임 중 화면을 클릭하면 마우스로 시점을 돌려요 (Esc로 해제)</div>
     </div>
@@ -49,11 +50,22 @@
     <div class="rotate-hint">📱 가로로 돌리면 더 넓게 보여요</div>
   </div>
 
+  <!-- 이모티콘 고르기 -->
+  <div id="emote-picker" hidden>
+    <div class="ep-box">
+      <div class="ep-title">이모티콘 4개 고르기 <span class="ep-count"></span></div>
+      <div class="ep-sub">누른 순서대로 1~4번 키에 들어가요</div>
+      <div class="ep-grid"></div>
+      <div class="ep-buttons"><button class="ep-done">완료</button><button class="ep-cancel">취소</button></div>
+    </div>
+  </div>
+
   <!-- 대기실 -->
   <div id="lobby" hidden>
     <div class="lobby-box">
       <div class="lobby-title">대기실</div>
       <div class="lobby-list"></div>
+      <button id="btn-bots">🤖 빈자리 AI 채우기: 켬</button>
       <button id="btn-start">시작하기</button>
       <div class="lobby-timer"></div>
     </div>

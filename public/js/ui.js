@@ -12,21 +12,79 @@ const KIND_NAME = { stat: '스탯', skill: '스킬', rule: '규칙', trade: '트
 const RARITY_NAME = { common: '일반', rare: '희귀', legend: '전설' };
 const icon = id => ICONS[id] ?? '✨';
 
-// 감정 이모티콘 (서버는 번호만 안다). face = 캐릭터 표정
+// 감정 이모티콘 / 도발 (서버는 번호만 안다. 순서를 바꾸면 안 됨 — 서버 EMOTE_COUNT와 개수 맞춤)
+// face = 캐릭터 표정, gesture = 몸동작 (character.js)
 export const EMOTES = [
-  { icon: '😆', face: 'happy', name: '신남' },
-  { icon: '😡', face: 'angry', name: '화남' },
-  { icon: '😱', face: 'surprised', name: '놀람' },
-  { icon: '👍', face: 'normal', name: '좋아' },
+  { icon: '😆', text: 'ㅋㅋㅋ', face: 'happy', gesture: 'dance', name: '신남' },
+  { icon: '😡', text: '으으!', face: 'angry', gesture: 'flex', name: '화남' },
+  { icon: '😱', text: '헉!', face: 'surprised', name: '놀람' },
+  { icon: '👍', text: '굿!', face: 'happy', name: '좋아' },
+  { icon: '😜', text: '메롱~', face: 'happy', gesture: 'taunt', name: '메롱' },
+  { icon: '👋', text: '잘 가~', face: 'happy', gesture: 'wave', name: '잘 가' },
+  { icon: '🫵', text: '덤벼!', face: 'angry', gesture: 'point', name: '덤벼' },
+  { icon: '💪', text: '약하다!', face: 'angry', gesture: 'flex', name: '힘자랑' },
+  { icon: '🐔', text: '겁쟁이~', face: 'happy', gesture: 'taunt', name: '겁쟁이' },
+  { icon: '😴', text: 'zzZ', face: 'normal', name: '졸려' },
+  { icon: '🤡', text: '삐에로~', face: 'happy', gesture: 'dance', name: '놀리기' },
+  { icon: '😭', text: '엉엉', face: 'surprised', name: '엉엉' },
+  { icon: '🙏', text: '살려줘!', face: 'surprised', gesture: 'wave', name: '살려줘' },
+  { icon: '🎉', text: '나이스!', face: 'happy', gesture: 'dance', name: '축하' },
+  { icon: '❤️', text: '좋아해', face: 'happy', name: '하트' },
+  { icon: '😏', text: '훗', face: 'normal', gesture: 'point', name: '훗' },
 ];
+const DEFAULT_SLOTS = [0, 6, 4, 5]; // 신남, 덤벼, 메롱, 잘 가
 
+// 내가 들고 갈 이모티콘 4개 (처음 화면에서 고름, 브라우저에 저장)
+let slots = DEFAULT_SLOTS;
+try {
+  const saved = JSON.parse(localStorage.getItem('emoteSlots'));
+  if (Array.isArray(saved) && saved.length === 4 && saved.every(n => EMOTES[n])) slots = saved;
+} catch {}
+export const emoteSlot = i => slots[i];
+
+let onEmoteCb = null;
+function renderEmoteBar() {
+  $('emotes').innerHTML = slots.map((n, i) => `<button data-n="${n}" title="${EMOTES[n].name}">${EMOTES[n].icon}<kbd>${i + 1}</kbd></button>`).join('');
+}
 export function initEmoteBar(onEmote) {
-  const bar = $('emotes');
-  bar.innerHTML = EMOTES.map((e, i) => `<button data-n="${i}" title="${e.name}">${e.icon}<kbd>${i + 1}</kbd></button>`).join('');
-  bar.onclick = e => {
+  onEmoteCb = onEmote;
+  renderEmoteBar();
+  $('emotes').onclick = e => {
     const b = e.target.closest('button');
-    if (b) { onEmote(Number(b.dataset.n)); b.blur(); } // 포커스가 남으면 Space가 버튼을 다시 누름
+    if (b) { onEmoteCb(Number(b.dataset.n)); b.blur(); } // 포커스가 남으면 Space가 버튼을 다시 누름
   };
+}
+
+// 처음 화면: 이모티콘 고르기 (16개 중 4개, 누른 순서대로 1~4번)
+export function initEmotePicker() {
+  const box = $('emote-picker'), grid = box.querySelector('.ep-grid');
+  let picking = [...slots];
+  const draw = () => {
+    grid.innerHTML = EMOTES.map((e, n) => {
+      const order = picking.indexOf(n);
+      return `<button data-n="${n}" class="${order >= 0 ? 'on' : ''}">
+        <span class="ep-icon">${e.icon}</span><span class="ep-text">${e.text}</span>
+        ${order >= 0 ? `<b class="ep-order">${order + 1}</b>` : ''}</button>`;
+    }).join('');
+    box.querySelector('.ep-count').textContent = `${picking.length}/4`;
+    box.querySelector('.ep-done').disabled = picking.length !== 4;
+  };
+  grid.onclick = e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const n = Number(b.dataset.n), i = picking.indexOf(n);
+    if (i >= 0) picking.splice(i, 1);
+    else if (picking.length < 4) picking.push(n);
+    draw();
+  };
+  $('btn-emotes').onclick = () => { picking = [...slots]; draw(); box.hidden = false; };
+  box.querySelector('.ep-done').onclick = () => {
+    slots = [...picking];
+    try { localStorage.setItem('emoteSlots', JSON.stringify(slots)); } catch {}
+    renderEmoteBar();
+    box.hidden = true;
+  };
+  box.querySelector('.ep-cancel').onclick = () => { box.hidden = true; };
 }
 
 const $ = id => document.getElementById(id);
@@ -218,23 +276,39 @@ export function setConnecting(title, sub = '') {
 }
 
 // ---------- 대기실 ----------
-export function initLobby(onStart) {
-  $('btn-start').onclick = () => { onStart(); $('btn-start').disabled = true; $('btn-start').textContent = '시작하는 중…'; };
+let startPressedAt = 0, botsOn = true;
+export function initLobby(onStart, onBots) {
+  $('btn-start').onclick = () => { onStart(); startPressedAt = performance.now(); };
+  $('btn-bots').onclick = () => { onBots(!botsOn); $('btn-bots').blur(); };
 }
 
 export function updateLobby(s, myId) {
   const el = $('lobby');
   el.hidden = s.phase !== 'waiting';
-  if (el.hidden) { $('btn-start').disabled = false; $('btn-start').textContent = '시작하기'; return; }
+  if (el.hidden) { startPressedAt = 0; return; }
+  botsOn = s.bots;
   const humans = s.players.filter(p => !p.bot);
+  const canStart = s.bots || humans.length >= 2;
   setHtml(el.querySelector('.lobby-list'), humans.map(p =>
     `<div class="lobby-row"><span class="dot" style="background:${p.color}"></span>${p.name}${p.id === myId ? ' (나)' : ''}</div>`).join('')
-    + Array.from({ length: Math.max(0, 4 - humans.length) }, () => '<div class="lobby-row empty">빈자리 · 시작하면 봇</div>').join(''));
-  el.querySelector('.lobby-timer').textContent = `${s.lobby}초 뒤 자동 시작 · 친구는 같은 주소로 들어오면 돼요`;
+    + Array.from({ length: Math.max(0, 4 - humans.length) }, () =>
+      `<div class="lobby-row empty">${s.bots ? '빈자리 · 시작하면 AI' : '빈자리'}</div>`).join(''));
+  // 빈자리 AI 채우기 켬/끔 (방 안의 누구나 바꿀 수 있음)
+  const bots = $('btn-bots');
+  bots.textContent = s.bots ? '🤖 빈자리 AI 채우기: 켬' : '🙅 빈자리 AI 채우기: 끔';
+  bots.classList.toggle('off', !s.bots);
+  // 시작 버튼: 누른 직후 1.5초는 "시작하는 중…", AI를 끄면 2명 이상일 때만
+  const pressing = performance.now() - startPressedAt < 1500;
+  const btn = $('btn-start');
+  btn.disabled = !canStart || pressing;
+  btn.textContent = !canStart ? '2명 이상 모이면 시작' : pressing ? '시작하는 중…' : '시작하기';
+  el.querySelector('.lobby-timer').textContent = s.bots
+    ? `${s.lobby}초 뒤 자동 시작 · 친구는 같은 주소로 들어오면 돼요`
+    : 'AI 끔 · 자동으로 시작하지 않아요 · 친구는 같은 주소로 들어오면 돼요';
 }
 
 // ---------- 최종 순위 ----------
-const MEDAL = ['🥇', '🥈', '🥉'];
+const MEDAL = ['🥇', '🥈', '🥉', '💩']; // 4위는 똥
 let resultsKey = '';
 export function initResults(onRestart, onExit) {
   $('btn-restart').onclick = () => { onRestart(); $('btn-restart').disabled = true; };
@@ -283,7 +357,8 @@ export function updateLabel(el, p, isMe, x, y) {
   el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
   const bubble = el.querySelector('.bubble');
   if (p.em >= 0 && el.dataset.em !== String(p.em)) {
-    bubble.textContent = EMOTES[p.em]?.icon ?? '';
+    const em = EMOTES[p.em];
+    bubble.innerHTML = em ? `<span class="b-icon">${em.icon}</span><span class="b-text">${em.text}</span>` : '';
     bubble.hidden = false;
     bubble.classList.remove('pop'); void bubble.offsetWidth; bubble.classList.add('pop');
   } else if (p.em < 0) bubble.hidden = true;

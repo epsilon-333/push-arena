@@ -47,6 +47,16 @@ export class Arena {
     return !!t && t.state !== 'gone';
   }
 
+  // 떨어짐 판정: 몸 중심 + 주변 margin 거리 6곳 중 하나라도 바닥이면 버팀 (가장자리에 걸쳐도 안 떨어짐)
+  isStanding(x, z, margin) {
+    if (this.isGround(x, z)) return true;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      if (this.isGround(x + Math.cos(a) * margin, z + Math.sin(a) * margin)) return true;
+    }
+    return false;
+  }
+
   // 바닥 붕괴: 처음 밟으면 균열, 균열 난 타일을 다시 밟으면 crumbleTime 뒤 사라짐,
   // 사라진 타일은 respawnTime 뒤 다시 생김. "밟기" = 다른 타일에서 이 타일로 들어온 순간.
   // walkers: [{ id, x, z }]
