@@ -7,7 +7,12 @@
 npm install
 npm start
 ```
-브라우저에서 http://localhost:3000 접속 (탭 2개 이상 열면 라운드 시작).
+브라우저에서 http://localhost:3000 접속.
+- 방 만들기: 4자리 방 코드가 생기고 만든 사람이 방장(👑). 친구는 코드를 입력해 입장
+- 빠른 시작: 빠른 시작을 누른 사람끼리 한 방에 모임
+- 방장만 시작, 빈자리 AI 켬/끔(기본 끔), 다른 사람 내보내기 가능. 방장이 나가면 다음 사람이 방장
+- 게임이 시작된 방에는 아무도 못 들어옴. 게임 중 🚪 버튼으로 나갈 수 있음
+- 게임이 끝나고 "다시 하기"를 누르면 바로 새 방으로. 누른 사람끼리 같은 새 방에 모임
 혼자 테스트: 표지에서 "봇이랑 연습하기" (봇 3명과 나만의 방)
 맵 규칙 하나만 테스트: `MAP_RULE=collapse npm start` 또는 `MAP_RULE=tilt npm start`, `MAP_RULE=ice npm start`
 
@@ -18,7 +23,7 @@ npm start
 - `server/skills.js` — 스킬 6종 (돌진, 방어막, 충격파, 순간교체, 내려찍기, 블랙홀 구슬)
 - `server/bot.js` — 연습용 봇 AI (상대 추적, 낙하 지점 회피, 밀치기)
 - `server/room.js` — 방 1개의 게임 로직 (이동, 밀치기, 체력/기절, 라운드)
-- `server/index.js` — HTTP + WebSocket, 방 배정 (4명 차면 새 방)
+- `server/index.js` — HTTP + WebSocket, 방 관리 (방 코드, 빠른 시작, 다시 하기 → 새 방)
 - `public/client.js` — Three.js 씬, 맵/효과, 네트워크, 입력
 - `public/js/character.js` — 캐릭터 모델(후드티 캐릭터), 표정, 모션(대기/이동/밀치기/맞기/기절/낙하)
 - `public/js/ui.js` — 표지, 능력 카드, HUD, 이름표
