@@ -1,7 +1,7 @@
 // 육각형 타일 맵 (pointy-top, axial 좌표 q/r).
 // 타일 상태: alive → cracked(균열) → crumbling(무너지는 중) → gone → alive
 const SQRT3 = Math.sqrt(3);
-const STATE_CODE = { gone: 0, alive: 1, crumbling: 2, cracked: 3 };
+const STATE_CODE = { gone: 0, alive: 1, crumbling: 2, cracked: 3 }; // 4 = 영역 표시로 보호된 타일 (serialize 참고)
 
 export class Arena {
   constructor(rings, tileSize) {
@@ -66,7 +66,7 @@ export class Arena {
       const key = t ? `${t.q},${t.r}` : null;
       if (key === this.standing.get(w.id)) continue; // 같은 타일에 계속 서 있음
       this.standing.set(w.id, key);
-      if (!t) continue;
+      if (!t || t.protected) continue; // 영역 표시된 타일은 금이 안 감
       if (t.state === 'alive') { t.state = 'cracked'; this.version++; }
       else if (t.state === 'cracked') { t.state = 'crumbling'; t.timer = crumbleTime; this.version++; }
     }
@@ -83,7 +83,7 @@ export class Arena {
   // 스킬(내려찍기)로 타일에 금 내기: 정상 → 균열, 균열 → 무너짐
   crackAt(x, z, crumbleTime) {
     const t = this.tileAt(x, z);
-    if (!t) return;
+    if (!t || t.protected) return;
     if (t.state === 'alive') { t.state = 'cracked'; this.version++; }
     else if (t.state === 'cracked') { t.state = 'crumbling'; t.timer = crumbleTime; this.version++; }
   }
@@ -98,6 +98,19 @@ export class Arena {
     return t;
   }
 
+  // 지진: 흔들리다가(경고) → 뚫렸다가 → 메움. 저절로 바뀌지 않게 timer는 무한대
+  shakeTile(t) { t.state = 'crumbling'; t.timer = Infinity; this.version++; }
+  openTile(t) { t.state = 'gone'; t.timer = Infinity; this.version++; }
+
+  // 영역 표시: 이 타일은 이번 라운드 동안 안 무너짐 (금 간 것도 원래대로)
+  protect(t, owner) {
+    if (t.protected || (t.state !== 'alive' && t.state !== 'cracked')) return false;
+    t.protected = owner;
+    t.state = 'alive';
+    this.version++;
+    return true;
+  }
+
   fillHole(t) {
     if (!t || t.state !== 'gone' || t.timer !== Infinity) return;
     t.state = 'alive';
@@ -109,6 +122,6 @@ export class Arena {
   get spawnRadius() { return this.size * 1.5 * this.rings * 0.6; }
 
   serialize() {
-    return { size: this.size, version: this.version, tiles: [...this.tiles.values()].map(t => [t.q, t.r, STATE_CODE[t.state]]) };
+    return { size: this.size, version: this.version, tiles: [...this.tiles.values()].map(t => [t.q, t.r, t.protected && t.state === 'alive' ? 4 : STATE_CODE[t.state]]) };
   }
 }

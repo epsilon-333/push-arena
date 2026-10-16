@@ -10,11 +10,15 @@ const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22'
 
 // 방 하나 = 게임 하나. 물리/판정은 전부 서버에서 계산한다.
 // 흐름: waiting → picking → countdown → playing → roundEnd → picking → countdown ...
-//       (최종 승자가 나오면 roundEnd 대신 gameOver → 점수/능력 초기화 → picking)
+//       (최종 승자가 나오면 roundEnd 대신 gameOver. "다시 하기"를 누른 사람은 새 방으로 옮겨감)
+// kind: private(코드로 들어오는 방) / quick(빠른 시작) / practice(혼자 + 봇)
 export class Room {
-  constructor(id, { practice = false } = {}) {
-    this.id = id;
-    this.practice = practice; // 연습방: 혼자 + 봇, 다른 사람은 들어오지 않음
+  constructor(code, { kind = 'private' } = {}) {
+    this.code = code;
+    this.kind = kind;
+    this.practice = kind === 'practice'; // 연습방: 혼자 + 봇, 다른 사람은 들어오지 않음
+    this.hostId = null;   // 방장: 방을 만든 사람 (나가면 다음 사람에게 넘어감)
+    this.nextRoom = null; // 게임이 끝난 뒤 "다시 하기"를 누른 사람들이 모이는 방
     this.nextBotId = -1;
     this.players = new Map(); // id -> player
     this.arena = new Arena(C.HEX_RINGS, C.HEX_SIZE);
@@ -24,19 +28,23 @@ export class Room {
     this.orbs = [];              // 블랙홀 구슬
     this.nextOrbId = 1;
     this.iceTrail = [];          // 얼음 발자국 { x, z, t, owner }
+    this.bananas = [];           // 바나나 껍질 { id, owner, x, z, life }
+    this.nextBananaId = 1;
+    this.quakes = [];            // 지진으로 흔들리거나 뚫린 타일 { tile, timer, open, owner }
     this.events = [];            // 이번 틱에 화면에 보낼 효과 (충격파, 교체 등)
     this.phase = 'waiting';
     this.timer = 0;
     this.message = '';
     this.nextPlayerNum = 1;
-    this.lobbyTimer = C.LOBBY_TIME; // 대기실: 이 시간이 지나면 빈자리를 봇으로 채워 자동 시작
     this.startRequested = false;
-    this.botsEnabled = true; // 대기실 설정: 빈자리를 AI로 채울지
+    this.autoStart = null;    // 빠른 시작 방: 자동 시작까지 남은 시간 (2명 이상일 때만)
+    this.botsEnabled = false; // 대기실 설정: 빈자리를 AI로 채울지 (기본 끔, 방장만 바꿈)
   }
 
   // 사람 기준으로 꽉 찼는지 (봇 자리는 사람이 오면 비워줌)
   get humans() { return [...this.players.values()].filter(p => !p.bot); }
   get isFull() { return this.practice || this.humans.length >= C.MAX_PLAYERS; }
+  get isOpen() { return this.phase === 'waiting' && !this.isFull; } // 게임이 시작되면 아무도 못 들어옴
   get isEmpty() { return [...this.players.values()].every(p => p.bot); } // 사람이 없으면 빈 방
   get maxR() { return this.arena.size * 1.5 * this.arena.rings; }
 
@@ -56,16 +64,17 @@ export class Room {
       hp: C.MAX_HP, stunned: false, immune: 0,
       cooldown: 0, attackFlash: 0, attackCount: 0, hitCount: 0,
       alive: false, fallTimer: 0,
-      score: 0, kills: 0, ready: false,
+      score: 0, kills: 0,
       lastHitBy: null, lastHitTime: -99,
       abilities: [], mods: defaultMods(),
       skills: [null, null], skillCd: [0, 0],
       dash: 0, shield: 0, air: 0, airMax: 0, trailTimer: 0,
       offers: null, picked: false,
-      emote: -1, emoteTimer: 0, emoteCooldown: 0,
+      emote: -1, emoteTimer: 0, emoteCooldown: 0, hat: 0,
       input: { x: 0, z: 0, attack: false, skill: -1 },
     };
     this.players.set(id, p);
+    if (socket !== NO_SOCKET && this.hostId === null) this.hostId = id;
     this.send(p, { t: 'tiles', ...this.arena.serialize() });
     return p;
   }
@@ -75,11 +84,46 @@ export class Room {
     const p = this.addPlayer(id, NO_SOCKET);
     p.bot = createBotState();
     p.name = `봇 ${-id}`;
+    p.hat = 1 + Math.floor(Math.random() * (C.HAT_COUNT - 1));
     return p;
   }
 
   removePlayer(id) {
     this.players.delete(id);
+    if (id === this.hostId) this.hostId = this.humans[0]?.id ?? null; // 먼저 들어온 사람이 방장을 이어받음
+  }
+
+  // 연결이 끊김: 자리는 남겨두고 제자리에 멈춤 (index.js가 잠시 뒤 내보냄)
+  setAway(id) {
+    const p = this.players.get(id);
+    if (!p) return;
+    p.away = true;
+    p.input = { x: 0, z: 0, attack: false, skill: -1 };
+  }
+
+  // 다시 연결됨: 새 소켓으로 바꾸고 맵 상태를 다시 보냄
+  reattach(id, socket) {
+    const p = this.players.get(id);
+    if (!p) return;
+    p.socket = socket;
+    p.away = false;
+    this.send(p, { t: 'tiles', ...this.arena.serialize() });
+  }
+
+  // 능력 선택 중에 다시 연결되면 아직 안 고른 카드를 다시 보여줌
+  resendOffer(id) {
+    const p = this.players.get(id);
+    if (this.phase === 'picking' && p?.offers && !p.picked) {
+      this.send(p, { t: 'offer', offers: p.offers, skills: p.skills, time: Math.max(1, this.timer), luck: p.behind });
+    }
+  }
+
+  // 방장이 다른 사람을 내보냄. 내보낸 플레이어를 돌려줌 (소켓 정리는 index.js)
+  kick(id, targetId) {
+    const t = this.players.get(targetId);
+    if (id !== this.hostId || !t || t.bot || targetId === id) return null;
+    this.removePlayer(targetId);
+    return t;
   }
 
   setInput(id, input) {
@@ -101,6 +145,12 @@ export class Room {
     if (p && clean) p.name = clean;
   }
 
+  setHat(id, n) {
+    const p = this.players.get(id);
+    n = Math.floor(Number(n));
+    if (p) p.hat = n >= 0 && n < C.HAT_COUNT ? n : 0;
+  }
+
   emote(id, n) {
     const p = this.players.get(id);
     n = Math.floor(Number(n));
@@ -110,14 +160,14 @@ export class Room {
     p.emoteCooldown = C.EMOTE_COOLDOWN;
   }
 
-  // 대기실에서 "시작하기"
+  // 대기실에서 "시작하기" (방장만)
   requestStart(id) {
-    if (this.phase === 'waiting' && this.players.has(id)) this.startRequested = true;
+    if (this.phase === 'waiting' && id === this.hostId) this.startRequested = true;
   }
 
-  // 대기실에서 "빈자리 AI 채우기" 켬/끔
+  // 대기실에서 "빈자리 AI 채우기" 켬/끔 (방장만)
   setBots(id, on) {
-    if (this.phase === 'waiting' && this.players.has(id) && !this.practice) {
+    if (this.phase === 'waiting' && id === this.hostId && !this.practice) {
       this.botsEnabled = !!on;
       if (!on) for (const p of [...this.players.values()]) if (p.bot) this.players.delete(p.id);
     }
@@ -128,15 +178,14 @@ export class Room {
     while (this.players.size < C.MAX_PLAYERS) this.addBot();
   }
 
+  // 게임 중 사람이 나가서 혼자 남으면 대기실로 (점수/능력 초기화)
   toLobby() {
     this.phase = 'waiting';
-    this.lobbyTimer = C.LOBBY_TIME;
-  }
-
-  // 최종 순위 화면에서 "다시 하기"
-  restart(id) {
-    const p = this.players.get(id);
-    if (p && this.phase === 'gameOver') p.ready = true;
+    this.startRequested = false;
+    for (const p of [...this.players.values()]) if (p.bot) this.players.delete(p.id);
+    this.players.forEach(p => {
+      Object.assign(p, { score: 0, kills: 0, abilities: [], mods: defaultMods(), skills: [null, null], alive: false, offers: null });
+    });
   }
 
   // slot: 스킬 칸이 다 찼을 때 바꿀 칸 (0=Q, 1=E)
@@ -173,6 +222,8 @@ export class Room {
     this.tilt = { x: 0, z: 0 };
     this.orbs = [];
     this.iceTrail = [];
+    this.bananas = [];
+    this.quakes = [];
     this.arena.reset();
     this.spawnAll();
   }
@@ -181,11 +232,14 @@ export class Room {
     this.phase = 'picking';
     this.timer = C.PICK_TIME;
     this.message = '능력 선택 중';
+    const top = Math.max(...[...this.players.values()].map(p => p.score));
     for (const p of this.players.values()) {
-      p.offers = rollOffers(C.PICK_OPTIONS, p.abilities);
+      if (!p.abilities.length) for (const id of C.TEST_CARDS) this.grantAbility(p, id);
+      p.behind = top - p.score; // 뒤진 만큼 좋은 카드가 잘 나옴
+      p.offers = rollOffers(C.PICK_OPTIONS, p.abilities, p.behind);
       p.picked = false;
       if (p.bot) this.grantAbility(p, p.offers[Math.floor(Math.random() * p.offers.length)].id);
-      else this.send(p, { t: 'offer', offers: p.offers, skills: p.skills, time: C.PICK_TIME });
+      else this.send(p, { t: 'offer', offers: p.offers, skills: p.skills, time: C.PICK_TIME, luck: p.behind });
     }
   }
 
@@ -210,23 +264,38 @@ export class Room {
         hp: C.MAX_HP, stunned: false, immune: 0, cooldown: 0, attackFlash: 0,
         alive: true, fallTimer: 0,
         skillCd: [0, 0], dash: 0, shield: 0, air: 0, lastHitBy: null,
+        mirror: 0, ghost: 0, slip: 0, standKey: null, standTime: 0,
+        sneezeTimer: C.SNEEZE_MIN + Math.random() * (C.SNEEZE_MAX - C.SNEEZE_MIN),
       });
     });
   }
 
   updatePhase(dt) {
     const count = this.players.size;
+    // 게임 도중 사람이 나가서 혼자 남으면 바로 대기실로
+    if (this.phase !== 'waiting' && this.phase !== 'gameOver' && count < C.MIN_PLAYERS) { this.toLobby(); return; }
     switch (this.phase) {
-      case 'waiting': // 대기실: 누가 "시작하기"를 누르거나 시간이 다 되면 시작
+      case 'waiting': // 대기실: 방장이 "시작하기"를 누르면 시작 (연습방은 바로)
         this.message = '';
-        this.lobbyTimer -= dt;
-        // AI를 끄면 사람이 2명 이상일 때만 시작 (자동 시작도 안 함)
+        // AI를 끄면 사람이 2명 이상일 때만 시작
         if (!this.practice && !this.botsEnabled && this.humans.length < C.MIN_PLAYERS) {
           this.startRequested = false;
-          this.lobbyTimer = C.LOBBY_TIME;
+          this.autoStart = null;
           break;
         }
-        if (this.practice || this.startRequested || (this.botsEnabled && this.lobbyTimer <= 0)) {
+        // 빠른 시작 방: 방장이 안 눌러도 2명 이상이면 잠시 뒤, 꽉 차면 곧 자동 시작
+        if (this.kind === 'quick') {
+          const n = this.humans.length;
+          if (n < C.MIN_PLAYERS) this.autoStart = null;
+          else {
+            if (this.autoStart === null) this.autoStart = C.QUICK_AUTO_START;
+            if (n >= C.MAX_PLAYERS) this.autoStart = Math.min(this.autoStart, C.QUICK_FULL_START);
+            this.autoStart -= dt;
+            if (this.autoStart <= 0) this.startRequested = true;
+          }
+        }
+        if (this.practice || this.startRequested) {
+          this.autoStart = null;
           if (this.botsEnabled) this.fillBots();
           this.startRequested = false;
           this.startPicking(); // 게임 시작: 첫 라운드 전에 카드 1장
@@ -244,11 +313,9 @@ export class Room {
           if (winner) winner.score += 1;
           if (winner?.bot) this.emote(winner.id, 0); // 봇도 이기면 신남
           if (winner && winner.score >= C.WIN_SCORE) {
-            this.phase = 'gameOver';
-            this.timer = C.RESULT_TIME;
+            this.phase = 'gameOver'; // 이 방은 여기서 끝. 다시 하려면 새 방으로
             this.message = `${winner.name} 최종 승리!`;
             this.results = this.ranking();
-            this.players.forEach(p => { p.ready = false; });
           } else {
             this.phase = 'roundEnd';
             this.timer = C.ROUND_END_TIME;
@@ -274,20 +341,6 @@ export class Room {
         }
         break;
       }
-      case 'gameOver': {
-        this.timer -= dt;
-        const humans = [...this.players.values()].filter(p => !p.bot);
-        const allReady = humans.length > 0 && humans.every(p => p.ready);
-        if (this.timer <= 0 || allReady) {
-          this.results = null;
-          this.players.forEach(p => {
-            Object.assign(p, { score: 0, kills: 0, ready: false, abilities: [], mods: defaultMods(), skills: [null, null] });
-          });
-          if (count >= C.MIN_PLAYERS) this.startPicking(); // 새 게임도 카드 1장부터
-          else this.toLobby();
-        }
-        break;
-      }
     }
   }
 
@@ -295,7 +348,7 @@ export class Room {
   ranking() {
     return [...this.players.values()]
       .sort((a, b) => b.score - a.score || b.kills - a.kills)
-      .map((p, i) => ({ rank: i + 1, id: p.id, name: p.name, color: p.color, score: p.score, kills: p.kills, ab: p.abilities, bot: !!p.bot }));
+      .map((p, i) => ({ rank: i + 1, id: p.id, name: p.name, color: p.color, hat: p.hat, score: p.score, kills: p.kills, ab: p.abilities, bot: !!p.bot }));
   }
 
   // 떨어진 사람을 최근(4초 안)에 민 사람에게 처치 기록
@@ -359,6 +412,8 @@ export class Room {
       this.updateMap(dt, list);
       this.updateIceTrail(dt, list);
       updateOrbs(this, dt, list);
+      this.updateBananas(dt, list);
+      this.updateQuakes(dt, list);
     }
 
     for (const p of list) {
@@ -368,6 +423,10 @@ export class Room {
       p.immune = Math.max(0, p.immune - dt);
       p.shield = Math.max(0, p.shield - dt);
       p.skillCd = p.skillCd.map(c => Math.max(0, c - dt));
+      p.mirror = Math.max(0, p.mirror - dt);
+      p.ghost = Math.max(0, p.ghost - dt);
+      p.slip = Math.max(0, p.slip - dt);
+      if (canAct) { this.updateSneeze(p, dt); this.updateTerritory(p, dt); }
 
       // 체력 회복 / 기절 해제
       p.hp = Math.min(C.MAX_HP, p.hp + (p.stunned ? C.STUN_HP_REGEN * m.stunRecover : C.HP_REGEN * m.regen) * dt);
@@ -384,21 +443,23 @@ export class Room {
         accelMult = C.ICE_ACCEL_MULT + (1 - C.ICE_ACCEL_MULT) * m.slideResist;
       }
       friction *= m.friction;
+      if (p.slip > 0) friction *= 0.12; // 바나나: 쭉 미끄러짐
 
-      // 이동
-      const control = canAct && !p.stunned && p.fallTimer === 0;
+      // 이동 (거울 세계에 걸리면 방향키가 반대)
+      const control = canAct && !p.stunned && p.fallTimer === 0 && p.slip <= 0;
+      const ix = p.mirror > 0 ? -p.input.x : p.input.x, iz = p.mirror > 0 ? -p.input.z : p.input.z;
       const accel = C.MOVE_ACCEL * m.speed * accelMult, maxSpeed = C.MAX_SPEED * m.speed;
       if (p.dash > 0) {
         p.dash = Math.max(0, p.dash - dt); // 돌진 중에는 방향/속도 고정
       } else {
-        if (control && (p.input.x || p.input.z)) {
-          p.vx += p.input.x * accel * dt;
-          p.vz += p.input.z * accel * dt;
-          p.facing = Math.atan2(p.input.z, p.input.x);
+        if (control && (ix || iz)) {
+          p.vx += ix * accel * dt;
+          p.vz += iz * accel * dt;
+          p.facing = Math.atan2(iz, ix);
         }
         // 이동 입력으로는 최고 속도를 넘지 못하지만, 넉백은 넘을 수 있음
         const speed = Math.hypot(p.vx, p.vz);
-        if (control && speed > maxSpeed && (p.input.x || p.input.z)) {
+        if (control && speed > maxSpeed && (ix || iz)) {
           const over = Math.max(maxSpeed, speed - accel * dt);
           p.vx *= over / speed; p.vz *= over / speed;
         }
@@ -459,12 +520,86 @@ export class Room {
 
   radius(p) { return C.PLAYER_RADIUS * p.mods.size; }
 
-  // 공격자의 힘 배율 (도박사, 가장자리의 왕 포함)
-  powerOf(p) {
+  // 공격자의 힘 배율 (도박사, 가장자리의 왕, 복수, 왕의 귀환 포함). t: 맞는 상대
+  powerOf(p, t) {
     let power = p.mods.power;
     if (p.mods.gambler) power *= C.GAMBLER_MIN + Math.random() * (C.GAMBLER_MAX - C.GAMBLER_MIN);
     if (p.mods.edgeKing) power *= 1 + C.EDGE_KING_MAX * Math.min(1, Math.hypot(p.x, p.z) / this.maxR);
+    if (t && p.mods.revenge && p.lastHitBy === t.id) power *= C.REVENGE_MULT;
+    if (t && p.mods.king && this.isLeader(t)) power *= C.KING_MULT;
     return power;
+  }
+
+  // 점수 1등 (0점끼리는 1등 없음, 공동 1등은 모두 1등)
+  isLeader(t) {
+    const top = Math.max(...[...this.players.values()].map(o => o.score));
+    return top > 0 && t.score === top;
+  }
+
+  // ---------- 새 카드 효과 ----------
+
+  // 바나나 껍질: 놓은 사람 말고 밟으면 지금 가던 방향으로 쭉 미끄러짐
+  updateBananas(dt, list) {
+    for (const b of this.bananas) {
+      b.life -= dt;
+      for (const p of list) {
+        if (p.id === b.owner || p.fallTimer > 0 || p.air > 0 || p.ghost > 0 || p.slip > 0 || b.life <= 0) continue;
+        if (Math.hypot(p.x - b.x, p.z - b.z) > C.BANANA_RADIUS) continue;
+        const sp = Math.hypot(p.vx, p.vz);
+        const dx = sp > 0.5 ? p.vx / sp : Math.cos(p.facing), dz = sp > 0.5 ? p.vz / sp : Math.sin(p.facing);
+        p.vx = dx * C.SLIP_SPEED; p.vz = dz * C.SLIP_SPEED;
+        p.slip = C.SLIP_TIME;
+        p.hitCount++;
+        p.lastHitBy = b.owner; p.lastHitTime = this.time;
+        b.life = 0;
+        this.event({ k: 'slip', id: p.id, x: b.x, z: b.z });
+      }
+    }
+    this.bananas = this.bananas.filter(b => b.life > 0);
+  }
+
+  // 지진: 흔들림(경고) → 뚫림 → 메움. 뚫릴 때 그 위에 있던 사람이 떨어지면 지진 쓴 사람 처치
+  updateQuakes(dt, list) {
+    for (const q of this.quakes) {
+      q.timer -= dt;
+      if (q.timer > 0) continue;
+      if (!q.open) {
+        q.open = true;
+        q.timer = C.QUAKE_OPEN;
+        this.arena.openTile(q.tile);
+        for (const p of list) {
+          if (p.id !== q.owner && this.arena.tileAt(p.x, p.z) === q.tile) { p.lastHitBy = q.owner; p.lastHitTime = this.time; }
+        }
+      } else {
+        this.arena.fillHole(q.tile);
+        q.done = true;
+      }
+    }
+    this.quakes = this.quakes.filter(q => !q.done);
+  }
+
+  // 재채기: 가끔 저절로 주변을 밀치고 나도 뒤로 휘청
+  updateSneeze(p, dt) {
+    if (!p.mods.sneeze || p.fallTimer > 0 || p.air > 0) return;
+    p.sneezeTimer -= dt;
+    if (p.sneezeTimer > 0) return;
+    p.sneezeTimer = C.SNEEZE_MIN + Math.random() * (C.SNEEZE_MAX - C.SNEEZE_MIN);
+    this.radialPush(p, C.SNEEZE_RADIUS, C.SNEEZE_POWER, 0, 0.3);
+    p.vx -= Math.cos(p.facing) * 7; p.vz -= Math.sin(p.facing) * 7;
+    p.emote = C.EMOTE_COUNT; p.emoteTimer = 1.3; // 화면의 EMOTES 마지막 칸 = 에취!
+    this.event({ k: 'sneeze', id: p.id, x: p.x, z: p.z, r: C.SNEEZE_RADIUS });
+  }
+
+  // 영역 표시: 같은 타일에 TERRITORY_TIME 동안 서 있으면 그 타일은 이번 라운드 동안 보호
+  updateTerritory(p, dt) {
+    if (!p.mods.territory || p.fallTimer > 0 || p.air > 0) return;
+    const t = this.arena.tileAt(p.x, p.z);
+    const key = t ? `${t.q},${t.r}` : null;
+    if (key !== p.standKey) { p.standKey = key; p.standTime = 0; return; }
+    p.standTime += dt;
+    if (t && p.standTime >= C.TERRITORY_TIME && !this.quakes.some(q => q.tile === t) && this.arena.protect(t, p.id)) {
+      this.event({ k: 'flag', id: p.id, x: t.x, z: t.z });
+    }
   }
 
   // 피해: 기절 해제 직후 면역 중에는 체력이 깎이지 않음
@@ -476,7 +611,7 @@ export class Room {
 
   // 넉백 하나로 모음: 방어막, 공중, 무게, 기절, 빙판, 반사
   knock(t, nx, nz, strength, source) {
-    if (t.shield > 0 || t.air > 0) return;
+    if (t.shield > 0 || t.air > 0 || t.ghost > 0) return;
     const kb = C.KNOCKBACK * strength / t.mods.weight * (t.stunned ? C.STUN_KNOCKBACK_MULT : 1)
       * (this.rule === 'ice' ? C.ICE_KNOCKBACK_MULT : 1);
     t.vx += nx * kb;
@@ -491,9 +626,8 @@ export class Room {
 
   doAttack(attacker, list) {
     const range = C.ATTACK_RANGE * attacker.mods.range;
-    const power = this.powerOf(attacker);
     for (const t of list) {
-      if (t === attacker || t.fallTimer > 0) continue;
+      if (t === attacker || t.fallTimer > 0 || t.ghost > 0) continue;
       const dx = t.x - attacker.x, dz = t.z - attacker.z;
       const dist = Math.hypot(dx, dz);
       // 상대가 클수록 맞히기 쉬움
@@ -503,7 +637,7 @@ export class Room {
       if (Math.abs(diff) > C.ATTACK_ANGLE) continue;
       const wasStunned = t.stunned;
       this.damage(t, C.ATTACK_DAMAGE); // 이번 타격으로 막 기절했으면 넉백은 보통 세기
-      this.knockRaw(t, dx / dist, dz / dist, power, attacker, wasStunned);
+      this.knockRaw(t, dx / dist, dz / dist, this.powerOf(attacker, t), attacker, wasStunned);
     }
   }
 
@@ -518,14 +652,13 @@ export class Room {
   // 충격파류 스킬: 반경 안 모두 바깥쪽으로 (가까울수록 셈)
   // falloff: 범위 끝에서 줄어드는 비율 (0이면 거리 상관없이 같은 세기)
   radialPush(src, radius, strength, dmg, falloff = 0.5) {
-    const power = this.powerOf(src) * strength;
     for (const t of this.players.values()) {
-      if (t === src || !t.alive || t.fallTimer > 0) continue;
+      if (t === src || !t.alive || t.fallTimer > 0 || t.ghost > 0) continue;
       const dx = t.x - src.x, dz = t.z - src.z, d = Math.hypot(dx, dz);
       if (d > radius || d === 0) continue;
       const wasStunned = t.stunned;
       this.damage(t, dmg);
-      this.knockRaw(t, dx / d, dz / d, power * (1 - (d / radius) * falloff), src, wasStunned);
+      this.knockRaw(t, dx / d, dz / d, this.powerOf(src, t) * strength * (1 - (d / radius) * falloff), src, wasStunned);
     }
   }
 
@@ -533,7 +666,7 @@ export class Room {
     for (let i = 0; i < list.length; i++) {
       for (let j = i + 1; j < list.length; j++) {
         const a = list[i], b = list[j];
-        if (a.air > 0 || b.air > 0) continue; // 공중에 있으면 안 부딪힘
+        if (a.air > 0 || b.air > 0 || a.ghost > 0 || b.ghost > 0) continue; // 공중·유령이면 안 부딪힘
         const minDist = this.radius(a) + this.radius(b);
         const dx = b.x - a.x, dz = b.z - a.z;
         const dist = Math.hypot(dx, dz);
@@ -543,7 +676,7 @@ export class Room {
             d.dashHit.add(o.id);
             const wasStunned = o.stunned;
             this.damage(o, 20);
-            this.knockRaw(o, (dx / dist) * s, (dz / dist) * s, this.powerOf(d) * C.DASH_HIT_MULT, d, wasStunned);
+            this.knockRaw(o, (dx / dist) * s, (dz / dist) * s, this.powerOf(d, o) * C.DASH_HIT_MULT, d, wasStunned);
             d.dash = 0; d.vx *= 0.3; d.vz *= 0.3;
           }
         }
@@ -598,14 +731,18 @@ export class Room {
     this.sendAll({
       t: 'state',
       phase: this.phase,
-      lobby: this.phase === 'waiting' ? Math.max(0, Math.ceil(this.lobbyTimer)) : 0,
+      code: this.code,
+      kind: this.kind,
+      host: this.hostId,
       bots: this.botsEnabled,
+      auto: this.autoStart === null ? null : Math.max(0, Math.ceil(this.autoStart)),
       timer: r2(Math.max(0, this.timer)),
       message: this.message,
       rule: this.rule,
       tilt: { x: r2(this.tilt.x), z: r2(this.tilt.z) },
       orbs: this.orbs.map(o => ({ id: o.id, x: r2(o.x), z: r2(o.z), fly: o.fly > 0 })),
       ice: this.iceTrail.map(t => [r2(t.x), r2(t.z), r2(this.time - t.t)]),
+      bananas: this.bananas.map(b => [b.id, r2(b.x), r2(b.z)]),
       ev: this.events,
       results: this.phase === 'gameOver' ? this.results : null,
       players: [...this.players.values()].map(p => ({
@@ -615,10 +752,11 @@ export class Room {
         al: p.alive, fall: r2(p.fallTimer), atk: p.attackCount, hit: p.hitCount,
         rg: r2(C.ATTACK_RANGE * p.mods.range), sz: r2(p.mods.size),
         vx: r2(p.vx), vz: r2(p.vz), sq: p.inputSeq ?? 0, bot: !!p.bot,
-        ms: r2(p.mods.speed), mf: r2(p.mods.friction), mr: r2(p.mods.slideResist), ctl: !p.stunned && p.dash <= 0 && p.air <= 0,
-        sc: p.score, kl: p.kills, rd: p.ready, ab: p.abilities, pk: p.picked,
-        em: p.emoteTimer > 0 ? p.emote : -1,
+        ms: r2(p.mods.speed), mf: r2(p.mods.friction), mr: r2(p.mods.slideResist), ctl: !p.stunned && p.dash <= 0 && p.air <= 0 && p.slip <= 0,
+        sc: p.score, kl: p.kills, ab: p.abilities, pk: p.picked,
+        em: p.emoteTimer > 0 ? p.emote : -1, away: !!p.away, hat: p.hat,
         sk: p.skills, cd: p.skillCd.map(r2),
+        mir: r2(p.mirror), gh: p.ghost > 0, sl: p.slip > 0,
         sh: p.shield > 0, dash: p.dash > 0, air: p.airMax ? r2(Math.max(0, p.air) / p.airMax) : 0,
       })),
     });

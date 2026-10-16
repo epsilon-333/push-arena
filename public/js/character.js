@@ -43,6 +43,80 @@ const G = {
   star: new THREE.OctahedronGeometry(0.08),
 };
 
+// ---------- 모자 (서버는 번호만 안다. 순서를 바꾸면 안 됨 — 서버 HAT_COUNT와 개수 맞춤) ----------
+// 머리 그룹 기준: 머리 반지름 0.52, 정수리 y≈0.52, 앞 = +x
+const HAT_MAT = {
+  gold: toon('#ffcf3a'), red: toon('#e74c3c'), pink: toon('#ff8fc7'), white: WHITE, green: toon('#5cc96b'),
+  blue: toon('#3f6fd8'), ink: toon('#2c2e38'), purple: toon('#9b59b6'), orange: toon('#ff9f43'),
+};
+const HALO = new THREE.MeshBasicMaterial({ color: '#fff3a0' });
+const Hg = {
+  ring: new THREE.CylinderGeometry(0.3, 0.33, 0.2, 20, 1, true),
+  spike: new THREE.ConeGeometry(0.07, 0.2, 8),
+  gem: new THREE.OctahedronGeometry(0.06),
+  cone: new THREE.ConeGeometry(0.26, 0.62, 20),
+  ball: new THREE.SphereGeometry(0.09, 12, 8),
+  ear: new THREE.CapsuleGeometry(0.09, 0.42, 4, 10),
+  catEar: new THREE.ConeGeometry(0.15, 0.3, 4),
+  stem: new THREE.CylinderGeometry(0.025, 0.025, 0.22, 6),
+  leaf: new THREE.SphereGeometry(0.13, 12, 8),
+  cap: new THREE.SphereGeometry(0.55, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+  brim: new THREE.CylinderGeometry(0.34, 0.34, 0.04, 20, 1, false, 0, Math.PI), // 앞(+x)쪽 반원
+  bow: new THREE.ConeGeometry(0.13, 0.24, 12),
+  knot: new THREE.SphereGeometry(0.07, 10, 8),
+  halo: new THREE.TorusGeometry(0.3, 0.045, 8, 32),
+  horn: new THREE.ConeGeometry(0.08, 0.3, 10),
+  band: new THREE.TorusGeometry(0.56, 0.045, 8, 32, Math.PI),
+  cup: new THREE.CylinderGeometry(0.15, 0.15, 0.12, 16),
+  top: new THREE.CylinderGeometry(0.27, 0.27, 0.42, 20),
+  topBrim: new THREE.CylinderGeometry(0.44, 0.44, 0.04, 24),
+  frog: new THREE.SphereGeometry(0.12, 12, 10),
+};
+const at = (m, x, y, z, rx = 0, ry = 0, rz = 0) => { m.position.set(x, y, z); m.rotation.set(rx, ry, rz); return m; };
+
+export const HATS = [
+  { icon: '🚫', name: '없음', build: () => [] },
+  { icon: '👑', name: '왕관', build: () => [
+    at(part(Hg.ring, HAT_MAT.gold, 1.04), 0, 0.5, 0, 0, 0, 0.12),
+    ...[0, 1, 2, 3, 4, 5].map(i => { const a = (i / 6) * Math.PI * 2; return at(part(Hg.spike, HAT_MAT.gold, 1.08), Math.cos(a) * 0.3 - 0.02, 0.66, Math.sin(a) * 0.3, 0, 0, 0.12); }),
+    at(new THREE.Mesh(Hg.gem, HAT_MAT.red), 0.33, 0.48, 0, 0, 0, 0.12),
+  ] },
+  { icon: '🎉', name: '고깔모자', build: () => [
+    at(part(Hg.cone, HAT_MAT.pink, 1.05), -0.05, 0.75, 0.05, 0.15, 0, 0.15),
+    at(part(Hg.ball, HAT_MAT.gold, 1.1), -0.1, 1.06, 0.1),
+  ] },
+  { icon: '🐰', name: '토끼 귀', build: () => [-1, 1].map(s => at(part(Hg.ear, HAT_MAT.white, 1.08), -0.05, 0.72, s * 0.17, s * 0.2, 0, 0.1)) },
+  { icon: '🐱', name: '고양이 귀', build: () => [-1, 1].map(s => at(part(Hg.catEar, HAT_MAT.ink, 1.08), 0, 0.55, s * 0.27, s * 0.45, Math.PI / 4, 0)) },
+  { icon: '🌱', name: '새싹', build: () => {
+    const l = s => { const m = part(Hg.leaf, HAT_MAT.green, 1.08); m.scale.set(1, 0.35, 0.6); return at(m, 0, 0.75, s * 0.12, s * 0.5, 0, 0); };
+    return [at(part(Hg.stem, HAT_MAT.green, 0), 0, 0.6, 0), l(-1), l(1)];
+  } },
+  { icon: '🧢', name: '야구모자', build: () => [
+    at(part(Hg.cap, HAT_MAT.red, 1.03), 0, 0.08, 0),
+    at(part(Hg.brim, HAT_MAT.red, 1.06), 0.3, 0.2, 0, 0, 0, -0.12),
+  ] },
+  { icon: '🎀', name: '리본', build: () => [
+    ...[-1, 1].map(s => at(part(Hg.bow, HAT_MAT.pink, 1.08), 0, 0.5, 0.22 + s * 0.15, s * Math.PI / 2, 0, 0)),
+    at(part(Hg.knot, HAT_MAT.pink, 1.1), 0, 0.5, 0.22),
+  ] },
+  { icon: '😇', name: '천사 링', float: true, build: () => [at(new THREE.Mesh(Hg.halo, HALO), 0, 0.82, 0, Math.PI / 2, 0, 0)] },
+  { icon: '😈', name: '악마 뿔', build: () => [-1, 1].map(s => at(part(Hg.horn, HAT_MAT.red, 1.08), 0.12, 0.5, s * 0.25, s * 0.5, 0, -0.25)) },
+  { icon: '🎧', name: '헤드폰', build: () => [
+    at(part(Hg.band, HAT_MAT.ink, 1.05), 0, 0.02, 0, 0, Math.PI / 2, 0),
+    ...[-1, 1].map(s => at(part(Hg.cup, HAT_MAT.blue, 1.08), 0, 0, s * 0.55, Math.PI / 2, 0, 0)),
+  ] },
+  { icon: '🎩', name: '신사 모자', build: () => [
+    at(part(Hg.topBrim, HAT_MAT.ink, 1.06), 0, 0.46, 0, 0, 0, 0.1),
+    at(part(Hg.top, HAT_MAT.ink, 1.05), -0.02, 0.68, 0, 0, 0, 0.1),
+  ] },
+  { icon: '🐸', name: '개구리 눈', build: () => [-1, 1].flatMap(s => {
+    const eye = at(part(Hg.frog, HAT_MAT.green, 1.08), 0.12, 0.5, s * 0.2);
+    const pupil = at(new THREE.Mesh(Hg.knot, INK), 0.22, 0.52, s * 0.2);
+    pupil.scale.setScalar(0.6);
+    return [eye, pupil];
+  }) },
+];
+
 export class Character {
   constructor(color) {
     this.root = new THREE.Group(); // 게임이 위치/방향을 정함
@@ -144,7 +218,19 @@ export class Character {
     this.walkPhase = 0;
     this.push = 1;   // 0→1 진행 중이면 밀치기 모션
     this.hit = 1;    // 0→1 진행 중이면 맞는 모션
+    this.hat = new THREE.Group();
+    this.head.add(this.hat);
+    this.hatId = 0;
     this.setFace('normal');
+  }
+
+  setHat(n) {
+    n = HATS[n] ? n : 0;
+    if (this.hatId === n) return;
+    this.hatId = n;
+    this.hat.clear();
+    const parts = HATS[n].build();
+    if (parts.length) this.hat.add(...parts);
   }
 
   setFace(name) {
@@ -250,6 +336,7 @@ export class Character {
     this.rig.position.y = bob;
     this.rig.scale.set(squash, 1 / squash, 1);
     this.head.rotation.x = s.stunned ? Math.sin(t * 6) * 0.15 : headTilt;
+    if (HATS[this.hatId].float) this.hat.position.y = Math.sin(t * 3) * 0.04; // 천사 링 둥실
 
     this.stars.visible = !!s.stunned;
     if (s.stunned) {

@@ -3,7 +3,9 @@ export const CONFIG = {
   TICK_RATE: 30,          // 서버 업데이트 횟수/초
   MAX_PLAYERS: 4,         // 방 하나 최대 인원
   MIN_PLAYERS: 2,         // 라운드 시작 최소 인원
-  LOBBY_TIME: 30,         // 대기실에서 이 시간이 지나면 빈자리를 봇으로 채워 자동 시작
+  RECONNECT_TIME: 20,     // 연결이 끊겨도 이 시간(초) 안에 돌아오면 원래 자리로
+  QUICK_AUTO_START: 30,   // 빠른 시작 방: 2명 이상 모이면 이 시간 뒤 자동 시작 (방장이 안 눌러도)
+  QUICK_FULL_START: 3,    // 빠른 시작 방: 4명이 다 차면 이 시간 뒤 자동 시작
   WIN_SCORE: Number(process.env.WIN_SCORE) || 5, // 이 점수에 먼저 도달하면 게임 승리 (테스트: WIN_SCORE=1)
 
   HEX_RINGS: 7,           // 중앙 타일 바깥으로 몇 겹
@@ -14,6 +16,8 @@ export const CONFIG = {
   // 라운드마다 이 중 하나를 랜덤 적용
   // 테스트할 때는 환경변수 MAP_RULE=tilt 처럼 하나만 고정 가능
   MAP_RULES: process.env.MAP_RULE ? [process.env.MAP_RULE] : ['collapse', 'tilt', 'ice'],
+  // 테스트: TEST_CARDS=quake,banana npm start 처럼 쓰면 게임 시작할 때 모두에게 이 카드를 줌
+  TEST_CARDS: process.env.TEST_CARDS ? process.env.TEST_CARDS.split(',') : [],
   CRUMBLE_TIME: 1,        // 균열 난 타일을 다시 밟으면 사라지기까지 (초)
   TILE_RESPAWN_TIME: 3,   // 사라진 타일이 다시 생기기까지 (초)
   MAX_TILT: 0.4,          // 최대 기울기 (라디안, 약 23도)
@@ -31,6 +35,18 @@ export const CONFIG = {
   ICE_TRAIL_RADIUS: 0.9,
   GAMBLER_MIN: 0.7, GAMBLER_MAX: 2,
   EDGE_KING_MAX: 0.4,
+
+  BANANA_LIFE: 12,        // 바나나 껍질 유지 시간
+  BANANA_RADIUS: 0.8,
+  SLIP_TIME: 1.1,         // 바나나 밟으면 이 시간 동안 조작 불가 + 미끄러짐
+  SLIP_SPEED: 15,
+  MIRROR_TIME: 3,         // 거울 세계: 방향키 반대 시간
+  MAGNET_RANGE: 7, MAGNET_ANGLE: Math.PI * 0.35, MAGNET_PULL: 1.6,
+  GHOST_TIME: 1.5,
+  QUAKE_TILES: 7, QUAKE_WARN: 0.6, QUAKE_OPEN: 3, QUAKE_SAFE_RADIUS: 3.2, // 지진: 경고(흔들림) 뒤 3초간 뚫림
+  SNEEZE_MIN: 4, SNEEZE_MAX: 9, SNEEZE_RADIUS: 2.8, SNEEZE_POWER: 1.2,
+  TERRITORY_TIME: 1.5,    // 영역 표시: 이만큼 서 있으면 그 타일은 안 무너짐
+  REVENGE_MULT: 1.5, KING_MULT: 2,
 
   PICK_TIME: 10,        // 능력 선택 제한 시간 (넘으면 자동 선택)
   PICK_OPTIONS: 3,        // 제시되는 능력 개수
@@ -55,12 +71,12 @@ export const CONFIG = {
   STUN_RECOVER_HP: 50,    // 이 체력이 되면 기절 해제
   STUN_IMMUNE_TIME: 1.5,  // 기절 해제 후 재기절 면역 시간
 
+  HAT_COUNT: 12,          // 모자 종류 수 (0 = 없음, 화면 쪽 js/character.js HATS와 맞춤)
   EMOTE_COUNT: 16,        // 이모티콘 종류 수 (화면 쪽 js/ui.js EMOTES 목록과 맞춤)
   EMOTE_TIME: 2.5,        // 말풍선 표시 시간
   EMOTE_COOLDOWN: 0.8,    // 연속 사용 제한
 
   COUNTDOWN_TIME: 3,
   ROUND_END_TIME: 3,
-  RESULT_TIME: 30,        // 최종 순위 화면 (다 같이 '다시 하기' 누르면 바로 새 게임)
   FALL_TIME: 1,           // 판 밖으로 나간 뒤 탈락 처리까지
 };

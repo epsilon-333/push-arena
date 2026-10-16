@@ -47,6 +47,63 @@ export const SKILLS = {
     cd: 9,
     use(room, p) { p.air = C.SLAM_AIR_TIME; p.airMax = C.SLAM_AIR_TIME; },
   },
+  // 바나나 껍질: 발밑에 놓음. 다른 사람이 밟으면 미끄러짐 (놓은 사람은 안 미끄러짐)
+  banana: {
+    cd: 7,
+    use(room, p) {
+      room.bananas.push({ id: room.nextBananaId++, owner: p.id, x: p.x - Math.cos(p.facing) * 0.9, z: p.z - Math.sin(p.facing) * 0.9, life: C.BANANA_LIFE });
+    },
+  },
+  // 거울 세계: 살아 있는 상대 중 랜덤 한 명의 방향키를 반대로
+  mirror: {
+    cd: 12,
+    use(room, p) {
+      const list = [...room.players.values()].filter(o => o !== p && o.alive && o.fallTimer === 0);
+      if (!list.length) return false;
+      const t = list[Math.floor(Math.random() * list.length)];
+      t.mirror = C.MIRROR_TIME;
+      room.event({ k: 'mirror', id: p.id, target: t.id });
+    },
+  },
+  // 자석 손: 앞쪽 부채꼴 안의 상대를 내 쪽으로 끌어당김
+  magnet: {
+    cd: 8,
+    use(room, p) {
+      const hit = [];
+      for (const t of room.players.values()) {
+        if (t === p || !t.alive || t.fallTimer > 0) continue;
+        const dx = t.x - p.x, dz = t.z - p.z, d = Math.hypot(dx, dz);
+        if (d > C.MAGNET_RANGE || d < 0.5) continue;
+        let diff = Math.atan2(dz, dx) - p.facing;
+        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+        if (Math.abs(diff) > C.MAGNET_ANGLE) continue;
+        // 멀수록 세게 당겨서 대략 내 앞까지 옴
+        room.knock(t, -dx / d, -dz / d, C.MAGNET_PULL * Math.min(1, d / C.MAGNET_RANGE + 0.35), p);
+        hit.push([t.x, t.z]);
+      }
+      room.event({ k: 'magnet', id: p.id, x: p.x, z: p.z, f: p.facing, hit });
+    },
+  },
+  // 유령: 잠깐 통과 상태
+  ghost: {
+    cd: 10,
+    use(room, p) { p.ghost = C.GHOST_TIME; room.event({ k: 'ghost', id: p.id }); },
+  },
+  // 지진: 내 주변을 뺀 타일 중 랜덤 7개가 흔들리다가 3초간 뚫림
+  quake: {
+    cd: 16,
+    use(room, p) {
+      const tiles = [...room.arena.tiles.values()].filter(t =>
+        (t.state === 'alive' || t.state === 'cracked') && !t.protected && !room.quakes.some(q => q.tile === t)
+        && Math.hypot(t.x - p.x, t.z - p.z) > C.QUAKE_SAFE_RADIUS);
+      for (let i = 0; i < C.QUAKE_TILES && tiles.length; i++) {
+        const t = tiles.splice(Math.floor(Math.random() * tiles.length), 1)[0];
+        room.arena.shakeTile(t);
+        room.quakes.push({ tile: t, timer: C.QUAKE_WARN, open: false, owner: p.id });
+      }
+      room.event({ k: 'quake', id: p.id });
+    },
+  },
   // 블랙홀 구슬: 앞으로 던지면 멈춰서 3초간 주변을 끌어당김
   blackhole: {
     cd: 15,

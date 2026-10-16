@@ -72,6 +72,27 @@ const SFX = {
   crack: v => noise(0.05, { vol: 0.3 * v, from: 4000, to: 1500, q: 4 }),
   emote: () => tone(1200, 0.08, { type: 'sine', vol: 0.2, slide: 1.5 }),
   click: () => tone(800, 0.05, { type: 'square', vol: 0.1 }),
+  // 희귀 카드: 짧게 반짝
+  rare: () => { noise(0.06, { vol: 0.3, from: 3000, to: 5000, q: 3 }); [1319, 1760].forEach((f, i) => tone(f, 0.14, { type: 'sine', vol: 0.18, delay: 0.04 + i * 0.06 })); },
+  // 전설 카드: 반짝이는 상승음 + 화음
+  legend: () => {
+    [784, 988, 1175, 1568, 1976, 2349].forEach((f, i) => tone(f, 0.22, { type: 'triangle', vol: 0.22, delay: i * 0.05 }));
+    [523, 659, 784, 1047].forEach(f => tone(f, 0.9, { type: 'sine', vol: 0.16, delay: 0.32 }));
+    noise(0.5, { vol: 0.15, from: 6000, to: 9000, q: 2, delay: 0.3 });
+  },
+  // 새 카드
+  slip: v => { tone(900, 0.4, { type: 'sine', vol: 0.3 * v, slide: 0.3 }); noise(0.25, { vol: 0.25 * v, from: 2500, to: 600 }); },
+  mirror: v => [880, 740, 622, 523].forEach((f, i) => tone(f, 0.12, { type: 'sine', vol: 0.2 * v, delay: i * 0.05 })),
+  magnet: v => tone(180, 0.35, { type: 'sawtooth', vol: 0.15 * v, slide: 2.5 }),
+  ghost: v => tone(500, 0.6, { type: 'sine', vol: 0.18 * v, slide: 1.6 }),
+  quake: v => { tone(60, 0.9, { type: 'sawtooth', vol: 0.35 * v, slide: 0.7 }); noise(0.6, { vol: 0.45 * v, from: 300, to: 80, q: 0.7 }); },
+  sneeze: v => { noise(0.12, { vol: 0.25 * v, from: 2000, to: 4000, q: 2 }); noise(0.25, { vol: 0.5 * v, from: 3000, to: 900, delay: 0.14 }); },
+  flag: v => tone(1320, 0.12, { type: 'triangle', vol: 0.2 * v, slide: 1.3 }),
+  // 시상대 팡파르
+  fanfare: () => {
+    [[523, 0], [523, 0.12], [523, 0.24], [659, 0.36], [784, 0.6], [659, 0.78], [784, 0.9]].forEach(([f, d]) => tone(f, 0.2, { type: 'square', vol: 0.12, delay: d }));
+    [523, 659, 784, 1047].forEach(f => tone(f, 1.1, { type: 'triangle', vol: 0.18, delay: 1.05 }));
+  },
 };
 
 // 겹침 줄이기: 같은 소리는 0.07초 안에 다시 안 냄, 동시에 최대 6개

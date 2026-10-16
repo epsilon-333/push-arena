@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { Character, toon } from './js/character.js';
+import { Character, HATS, toon } from './js/character.js';
 import * as UI from './js/ui.js';
 import { isTouch, initTouch } from './js/touch.js';
 import * as Sound from './js/audio.js';
+import { Podium } from './js/podium.js';
 
 // ---------- 씬 기본 구성 ----------
 // 폰은 가볍게: 안티앨리어싱 끔, 해상도·그림자 품질 낮춤
@@ -35,6 +36,8 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
+const podium = new Podium(scene); // 최종 순위 시상대
+
 // 판 전체(타일 + 캐릭터)를 담는 그룹. 기울기는 이 그룹을 회전시킨다.
 const board = new THREE.Group();
 scene.add(board);
@@ -60,6 +63,7 @@ function setTileTheme(name) {
   sideMat.color.set(c.side);
 }
 const crumbleTop = toon('#ff8a5c');
+const flagTop = toon('#ffd36b'); // 영역 표시로 보호된 타일
 // 균열 무늬 (윗면 텍스처)
 const crackTex = (() => {
   const c = document.createElement('canvas');
@@ -117,7 +121,7 @@ function applyTiles(msg) {
       mesh.rotation.set(0, 0, 0);
     }
     d.state = state;
-    mesh.material[1] = state === 2 ? crumbleTop : state === 3 ? crackedTop : d.top;
+    mesh.material[1] = state === 2 ? crumbleTop : state === 3 ? crackedTop : state === 4 ? flagTop : d.top;
   }
   for (const [key, mesh] of tileMeshes) {
     if (!seen.has(key)) { board.remove(mesh); tileMeshes.delete(key); }
@@ -171,9 +175,55 @@ function spawnBurst(pos, color = '#ffffff') {
   effects.push({ obj: s, life: 0, max: 0.3, update: (e, k) => { s.scale.setScalar(0.6 + k * 1.6); s.material.opacity = 1 - k; } });
 }
 
+// 자석 손: 나와 끌려온 상대 사이 빛줄기
+const beamGeo = new THREE.CylinderGeometry(0.07, 0.07, 1, 6);
+beamGeo.rotateZ(Math.PI / 2); // x축 방향 길이 1
+function spawnBeam(ax, az, bx, bz, color) {
+  const m = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false }));
+  const len = Math.hypot(bx - ax, bz - az);
+  m.position.set((ax + bx) / 2, 1.1, (az + bz) / 2);
+  m.rotation.y = -Math.atan2(bz - az, bx - ax);
+  m.scale.set(len, 1, 1);
+  board.add(m);
+  effects.push({ obj: m, life: 0, max: 0.4, update: (e, k) => { m.material.opacity = 0.9 * (1 - k); m.scale.y = m.scale.z = 1 + k * 2; } });
+}
+
+// 바나나 껍질 (바닥에 놓인 것)
+const bananaMat = toon('#ffd84a'), bananaTip = toon('#7a5420');
+const bananaGeo = new THREE.TorusGeometry(0.3, 0.09, 8, 18, Math.PI * 1.15);
+const bananaMeshes = new Map();
+function syncBananas(list) {
+  const seen = new Set();
+  for (const [id, x, z] of list ?? []) {
+    seen.add(id);
+    if (bananaMeshes.has(id)) continue;
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(bananaGeo, bananaMat);
+    body.rotation.x = -Math.PI / 2;
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), bananaTip);
+    tip.position.set(0.3, 0, 0);
+    body.add(tip);
+    // 벌어진 껍질 3장
+    for (let i = 0; i < 3; i++) {
+      const peel = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.32, 6), bananaMat);
+      const a = -0.9 + i * 0.9;
+      peel.position.set(-0.3 + Math.cos(a + Math.PI) * 0.12, 0.03, Math.sin(a + Math.PI) * 0.12);
+      peel.rotation.set(Math.PI / 2, 0, a + Math.PI / 2);
+      g.add(peel);
+    }
+    g.add(body);
+    g.position.set(x, 0.1, z);
+    g.rotation.y = Math.random() * Math.PI * 2;
+    g.scale.setScalar(0.01);
+    board.add(g);
+    bananaMeshes.set(id, g);
+  }
+  for (const [id, g] of bananaMeshes) if (!seen.has(id)) { board.remove(g); bananaMeshes.delete(id); }
+}
+
 const waveGeo = new THREE.RingGeometry(0.5, 0.75, 24, 1, -Math.PI * 0.4, Math.PI * 0.8); // 서버 ATTACK_ANGLE과 맞춤
-function spawnPushWave(group, range) {
-  const m = new THREE.Mesh(waveGeo, new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+function spawnPushWave(group, range, color = '#ffffff') {
+  const m = new THREE.Mesh(waveGeo, new THREE.MeshBasicMaterial({ color, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
   m.rotation.x = -Math.PI / 2;
   m.position.set(group.position.x, 0.6, group.position.z);
   m.rotation.z = group.rotation.y; // 바라보는 방향
@@ -253,6 +303,32 @@ function playEvents(events) {
   for (const e of events ?? []) {
     if (e.k === 'ring') { spawnRing(e.x, e.z, e.r); Sound.play('boom', volAt(e.x, e.z)); }
     else if (e.k === 'dash') Sound.play('whoosh', e.id === myId ? 1 : 0.5);
+    else if (e.k === 'slip') { // 바나나 밟음
+      Sound.play('slip', e.id === myId ? 1 : volAt(e.x, e.z));
+      spawnBurst(tmp.set(e.x, 0.4, e.z), '#ffd84a');
+      if (e.id === myId) shake = 0.3;
+    }
+    else if (e.k === 'mirror') { // 거울 세계: 걸린 사람에게 보라색 반짝
+      const t = views.get(e.target);
+      Sound.play('mirror', e.target === myId || e.id === myId ? 1 : 0.4);
+      if (t) spawnBurst(tmp.set(t.char.root.position.x, 1.4, t.char.root.position.z), '#c08bff');
+    }
+    else if (e.k === 'magnet') { // 자석 손: 앞으로 보라 물결 + 끌려온 상대까지 빛줄기
+      Sound.play('magnet', e.id === myId ? 1 : volAt(e.x, e.z));
+      const v = views.get(e.id);
+      if (v) spawnPushWave(v.char.root, 7, '#c08bff');
+      for (const [hx, hz] of e.hit) { spawnBeam(e.x, e.z, hx, hz, '#c08bff'); spawnBurst(tmp.set(hx, 1.1, hz), '#c08bff'); }
+    }
+    else if (e.k === 'ghost') Sound.play('ghost', e.id === myId ? 1 : 0.4);
+    else if (e.k === 'quake') { Sound.play('quake', 1); shake = 0.6; }
+    else if (e.k === 'sneeze') {
+      Sound.play('sneeze', e.id === myId ? 1 : volAt(e.x, e.z));
+      spawnRing(e.x, e.z, e.r, '#c9f3ff');
+    }
+    else if (e.k === 'flag') { // 영역 표시: 타일이 금빛으로
+      Sound.play('flag', e.id === myId ? 1 : volAt(e.x, e.z) * 0.5);
+      spawnBurst(tmp.set(e.x, 0.5, e.z), '#ffd36b');
+    }
     else if (e.k === 'swap') {
       Sound.play('warp', 1);
       spawnBurst(tmp.set(e.ax, 1.1, e.az), '#b07bff');
@@ -276,7 +352,14 @@ function createView(p) {
   shield.position.y = 1.1;
   shield.visible = false;
   char.root.add(shield);
-  return { char, shield, dashPuff: 0, label: UI.createLabel(), target: { x: p.x, z: p.z }, prev: { x: p.x, z: p.z }, speed: 0, atk: p.atk, hit: p.hit };
+  // 유령: 하얗게 빛나는 몸 (캐릭터는 깜빡임)
+  const ghost = new THREE.Mesh(new THREE.SphereGeometry(1.05, 20, 14),
+    new THREE.MeshBasicMaterial({ color: '#eef6ff', transparent: true, opacity: 0.35, depthWrite: false }));
+  ghost.position.y = 1.1;
+  ghost.scale.set(0.9, 1.15, 0.9);
+  ghost.visible = false;
+  char.root.add(ghost);
+  return { char, shield, ghost, dashPuff: 0, label: UI.createLabel(), target: { x: p.x, z: p.z }, prev: { x: p.x, z: p.z }, speed: 0, atk: p.atk, hit: p.hit };
 }
 
 function removeView(id) {
@@ -291,36 +374,79 @@ let myId = null, ws = null, latest = null;
 const tiltTarget = { x: 0, z: 0 };
 
 let physics = null;
-let joined = null; // 다시 접속할 때 쓰는 { name, gameMode }
+let inGame = false; // 방에 한 번이라도 들어갔는지
+let resumeUntil = 0; // 연결이 끊긴 뒤 이 시각까지 원래 방으로 다시 연결을 시도
+const RESUME_MS = 18000; // 서버는 20초 동안 자리를 남겨둠
 
-function connect(name, gameMode) {
-  joined = { name, gameMode };
-  UI.setConnecting('서버에 연결하는 중…', '무료 서버라 처음 접속하면 깨어나는 데 최대 1분 걸려요');
+// 다시 연결할 때 쓰는 열쇠 (새로고침돼도 남도록 sessionStorage)
+const saveToken = t => { try { t ? sessionStorage.setItem('resumeToken', t) : sessionStorage.removeItem('resumeToken'); } catch {} };
+const loadToken = () => { try { return sessionStorage.getItem('resumeToken'); } catch { return null; } };
+
+// 처음 화면으로 돌아가기 (나가기 / 퇴출 / 연결 끊김). 새로고침으로 화면을 깨끗하게.
+function backToTitle(notice) {
+  const sock = ws;
+  ws = null; // 아래 close에서 다시 접속하지 않도록
+  if (sock?.readyState === 1) sock.send(JSON.stringify({ t: 'leave' })); // 서버가 자리를 바로 비우도록
+  sock?.close();
+  saveToken(null);
+  try { if (notice) sessionStorage.setItem('titleNotice', notice); } catch {}
+  location.reload();
+}
+
+// hello: 서버에 보낼 첫 메시지 { name, mode, code } 또는 { mode: 'resume', token }
+function connect(hello) {
+  if (hello.mode === 'resume') UI.setConnecting('다시 연결하는 중…', '잠깐만 기다려 주세요');
+  else UI.setConnecting('서버에 연결하는 중…', '무료 서버라 처음 접속하면 깨어나는 데 최대 1분 걸려요');
   // https로 접속했으면 wss (Cloudflare 터널, 호스팅 대비)
   const sock = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
   ws = sock;
-  sock.onopen = () => sock.send(JSON.stringify({ t: 'hello', name, mode: gameMode }));
+  sock.onopen = () => sock.send(JSON.stringify({ t: 'hello', ...hello }));
   sock.onmessage = e => {
     if (ws !== sock) return; // 옛 연결에서 오는 메시지는 무시 (화면·소리 두 번 방지)
     const msg = JSON.parse(e.data);
     if (msg.t === 'welcome') {
+      // "다시 하기"로 새 방에 옮겨 오거나 다시 연결되면 이전 화면을 비우고 새로 받음
+      if (inGame) resetWorld();
+      else { inGame = true; startGameView(); UI.enterGame(); }
       myId = msg.id; physics = msg.physics;
+      saveToken(msg.token);
+      resumeUntil = 0;
       UI.setCatalog(msg.abilities, msg.winScore, msg.skillCd);
       UI.setConnecting(null);
     }
+    else if (msg.t === 'joinFail') {
+      ws = null; sock.close();
+      UI.setConnecting(null);
+      UI.titleError(msg.reason);
+    }
+    else if (msg.t === 'resumeFail') {
+      ws = null; sock.close();
+      saveToken(null);
+      if (inGame) backToTitle('연결이 끊긴 사이 방에서 나가졌어요.');
+      else UI.setConnecting(null); // 새로고침 뒤 자동 재접속 실패: 그냥 처음 화면
+    }
+    else if (msg.t === 'kicked') backToTitle('방장이 방에서 내보냈어요.');
     else if (msg.t === 'state') applyState(msg);
     else if (msg.t === 'tiles') applyTiles(msg);
     else if (msg.t === 'offer') {
-      UI.showOffers(msg.offers, msg.skills, (id, slot) => { Sound.play('pick'); ws.send(JSON.stringify({ t: 'pick', id, slot })); });
-      msg.offers.forEach((_, i) => setTimeout(() => Sound.play('card'), 500 + i * 160)); // 카드 뒤집는 소리
+      UI.showOffers(msg.offers, msg.skills, (id, slot) => { Sound.play('pick'); ws.send(JSON.stringify({ t: 'pick', id, slot })); }, {
+        luck: msg.luck,
+        onFlip: o => Sound.play(o.rarity === 'legend' ? 'legend' : o.rarity === 'rare' ? 'rare' : 'card'), // 카드 뒤집는 소리
+      });
     }
   };
-  // 끊기면 화면을 비우고 2초 뒤 다시 접속
+  // 게임 중에 끊기면 18초 동안 원래 자리로 다시 연결 시도. 처음 접속이 안 되면(서버가 깨어나는 중) 2초 뒤 다시 시도
   sock.onclose = () => {
-    if (ws !== sock) return; // 이미 새 연결로 바뀐 옛 연결이면 무시
-    UI.setConnecting('연결이 끊겼어요', '다시 연결하는 중…');
-    resetWorld();
-    setTimeout(() => connect(joined.name, joined.gameMode), 2000);
+    if (ws !== sock) return; // 일부러 닫았거나 이미 새 연결로 바뀐 옛 연결이면 무시
+    if (inGame) {
+      const token = loadToken();
+      if (!resumeUntil) resumeUntil = performance.now() + RESUME_MS;
+      if (!token || performance.now() > resumeUntil) { backToTitle('연결이 끊겼어요. 다시 들어와 주세요.'); return; }
+      UI.setConnecting('연결이 끊겼어요', '다시 연결하는 중…');
+      setTimeout(() => { if (ws === sock) connect({ mode: 'resume', token }); }, 1000);
+      return;
+    }
+    setTimeout(() => { if (ws === sock) connect(hello); }, 2000);
   };
 }
 setInterval(sendInput, 1000 / 30);
@@ -329,7 +455,7 @@ setInterval(sendInput, 1000 / 30);
 function resetWorld() {
   for (const id of [...views.keys()]) removeView(id);
   myId = null; latest = null; pred = null; inputHistory.length = 0;
-  syncOrbs([]); syncIce([]);
+  syncOrbs([]); syncIce([]); syncBananas([]);
   tiltTarget.x = tiltTarget.z = 0;
 }
 
@@ -340,6 +466,7 @@ function applyState(s) {
     seen.add(p.id);
     let v = views.get(p.id);
     if (!v) { v = createView(p); views.set(p.id, v); }
+    v.char.setHat(p.hat);
     // 공격/피격 카운터가 바뀌면 모션 재생
     // 내 소리는 크게, 다른 사람 소리는 거리에 따라 작게 (봇이 많으면 소리가 겹치므로)
     const isMe = p.id === myId, vol = isMe ? 1 : volAt(p.x, p.z);
@@ -362,12 +489,22 @@ function applyState(s) {
   latestPhase = s.phase;
   syncOrbs(s.orbs);
   syncIce(s.ice);
+  syncBananas(s.bananas);
+  UI.updateStatus(me); // 거울 세계에 걸리면 화면에 표시
   playEvents(s.ev);
   UI.renderHud(s, myId);
   UI.updateSkillHud(me);
   if (s.phase === 'gameOver' && prevPhase !== 'gameOver') resultsAt = performance.now() + 2500;
   prevPhase = s.phase;
   UI.updateResults(s, myId, resultsAt);
+  // 순위 화면이 뜨는 순간 카메라를 시상대로 (순위 화면이 닫히면 맵으로)
+  const showPodium = s.phase === 'gameOver' && s.results && performance.now() > resultsAt;
+  if (showPodium) {
+    if (!podium.visible) { podium.show(s.results); podiumCam(true); Sound.play('fanfare'); }
+    else podium.show(s.results);
+  } else if (podium.visible) podium.hide();
+  document.getElementById('labels').hidden = podium.visible;
+  document.body.classList.toggle('podium', podium.visible); // 시상대 동안 점수판·스킬칸 등은 숨김
   UI.updateLobby(s, myId);
 }
 let latestPhase = null, prevPhase = null, resultsAt = 0, lastCount = 0;
@@ -387,11 +524,17 @@ function playPhaseSounds(s, me) {
 UI.initLobby(
   () => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'start' })),
   on => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'bots', on })),
+  id => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'kick', id })),
+  () => backToTitle(),
 );
 UI.initResults(
-  () => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'restart' })),
-  () => location.reload(), // 처음 화면으로
+  () => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'restart' })), // 바로 새 방으로
+  () => backToTitle(), // 처음 화면으로
 );
+// 게임 도중 나가기
+document.getElementById('leave').onclick = () => {
+  if (latest?.phase === 'waiting' || latest?.phase === 'gameOver' || confirm('게임에서 나갈까요?')) backToTitle();
+};
 
 // ---------- 입력 ----------
 const keys = new Set();
@@ -459,6 +602,7 @@ function canPredict(me) {
 }
 
 function stepPred(st, ix, iz, me, dt) {
+  if (me.mir > 0) { ix = -ix; iz = -iz; } // 거울 세계: 서버와 똑같이 방향 반대
   const P = physics, slide = me.mr;
   let friction = P.friction, accelMult = 1;
   if (latest.rule === 'ice') {
@@ -516,14 +660,30 @@ function sendInput() {
 let mode = 'title';
 const demo = new Character('#3f6fd8');
 board.add(demo.root);
+UI.initHatPicker(HATS, n => demo.setHat(n));
 let demoTimer = 0;
+const hatPicker = document.getElementById('hat-picker');
 
-UI.initTitle((name, gameMode) => {
+UI.initTitle((name, gameMode, code) => {
   Sound.unlock(); // 버튼을 누른 순간에만 소리를 켤 수 있음
+  connect({ name, mode: gameMode, code, hat: UI.getHat() });
+});
+// 게임 중에 페이지가 새로고침됐으면(폰이 탭을 다시 불러옴) 원래 방으로 돌아가 봄
+if (loadToken()) connect({ mode: 'resume', token: loadToken() });
+
+// 방에 들어가면 표지 장면을 치우고 게임 화면으로
+function startGameView() {
   mode = 'game';
   board.remove(demo.root);
-  connect(name, gameMode);
-});
+}
+
+// 시상대 카메라: snap이면 바로 옮김 (맵에서 멀리 떨어져 있어서 날아가는 모습을 안 보이게)
+function podiumCam(snap) {
+  const side = innerWidth > innerHeight && innerHeight <= 520;
+  podium.cameraGoal(camGoal, lookGoal, innerWidth < innerHeight, side);
+  if (snap) { camera.position.copy(camGoal); camLook.copy(lookGoal); }
+  else { camera.position.lerp(camGoal, 0.1); camLook.lerp(lookGoal, 0.1); }
+}
 
 // ---------- 렌더 루프 ----------
 const tmp = new THREE.Vector3();
@@ -538,12 +698,24 @@ function frame(now) {
 
   // 카메라
   if (mode === 'title') {
-    const a = t * 0.25;
-    camera.position.set(Math.cos(a) * 6.5 + 2, 3.2, Math.sin(a) * 6.5 + 2);
-    camLook.set(0, 1.1, 0);
+    if (!hatPicker.hidden) {
+      // 모자 고르는 중: 캐릭터 얼굴 앞으로 가까이 (아래쪽은 고르기 창이 가림)
+      const a = Math.sin(t * 0.6) * 0.5;
+      const portrait = innerWidth < innerHeight;
+      camGoal.set(Math.cos(a) * (portrait ? 6.5 : 5.4), 1.7, Math.sin(a) * (portrait ? 6.5 : 5.4));
+      camera.position.lerp(camGoal, 1 - Math.exp(-dt * 5));
+      camLook.set(0, portrait ? -0.4 : 0.1, 0);
+    } else {
+      const a = t * 0.25;
+      camera.position.set(Math.cos(a) * 6.5 + 2, 3.2, Math.sin(a) * 6.5 + 2);
+      camLook.set(0, 1.1, 0);
+    }
     demoTimer -= dt;
     if (demoTimer <= 0) { demo.playPush(); demoTimer = 2.2; }
     demo.update(dt, t, { speed: 0 });
+  } else if (podium.visible) {
+    podiumCam(false);
+    podium.update(dt, t);
   } else {
     const me = views.get(myId);
     const k = 1 - Math.exp(-dt * 6);
@@ -605,6 +777,8 @@ function frame(now) {
     g.userData.pull.rotation.z -= dt * 1.5;
   }
 
+  for (const g of bananaMeshes.values()) g.scale.setScalar(Math.min(1, g.scale.x + dt * 5)); // 톡 하고 나타남
+
   // 효과
   for (let i = effects.length - 1; i >= 0; i--) {
     const e = effects[i];
@@ -633,6 +807,9 @@ function frame(now) {
     root.position.y = p.air > 0 ? Math.sin(p.air * Math.PI) * 2.4 : -p.fall * p.fall * 12;
     root.scale.setScalar(1.05 * (p.sz || 1)); // 크기 카드
     v.shield.visible = p.sh;
+    v.ghost.visible = p.gh;
+    if (p.gh) v.ghost.material.opacity = 0.25 + Math.sin(t * 12) * 0.1;
+    v.char.rig.rotation.y = p.sl ? t * 16 : 0; // 바나나: 빙글빙글
     if (p.sh) v.shield.material.opacity = 0.22 + Math.sin(t * 8) * 0.08;
     if (p.dash) { // 돌진 흔적
       v.dashPuff -= dt;
@@ -648,7 +825,7 @@ function frame(now) {
     v.prev.x = root.position.x; v.prev.z = root.position.z;
 
     v.char.update(dt, t, { speed: v.speed, stunned: p.st, falling: p.fall > 0, winner: winnerPhase && p.al, emoteFace: UI.EMOTES[p.em]?.face, gesture: UI.EMOTES[p.em]?.gesture });
-    root.visible = !(p.im && Math.floor(t * 12) % 2 === 0) || p.fall > 0; // 면역 중 깜빡임
+    root.visible = !((p.im || p.gh) && Math.floor(t * 12) % 2 === 0) || p.fall > 0; // 면역·유령 중 깜빡임
 
     if (v.pushQueued) { spawnPushWave(root, v.pushQueued); v.pushQueued = 0; }
     if (v.hitQueued) {

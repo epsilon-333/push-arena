@@ -38,6 +38,10 @@ export function updateBot(p, room, dt) {
       const tx = (target.x - p.x) / (best || 1), tz = (target.z - p.z) / (best || 1);
       score += (d.x * tx + d.z * tz) * b.aggression;
     }
+    // 남의 바나나는 피하기
+    for (const bn of room.bananas) {
+      if (bn.owner !== p.id && Math.hypot(p.x + d.x * 1.2 - bn.x, p.z + d.z * 1.2 - bn.z) < 1.1) score -= 1.5;
+    }
     // 앞에 바닥이 없으면 크게 감점
     [0.8, 1.6, 2.6].forEach((dist, i) => {
       const t = arena.tileAt(p.x + d.x * dist, p.z + d.z * dist);
@@ -80,6 +84,11 @@ function useSkills(p, room, target, dist, others) {
       swap: Math.hypot(p.x, p.z) > room.maxR * 0.7, // 가장자리에 몰렸으면 가장 먼 상대와 교체
       slam: dist < 2.8,
       blackhole: facingTarget && dist < 9,
+      banana: dist < 4 && Math.random() < 0.5,       // 쫓아오는 상대 앞에 깔기
+      mirror: dist < 5,
+      magnet: facingTarget && dist > 2.5 && dist < 6.5 && Math.hypot(p.x, p.z) < room.maxR * 0.5, // 가운데서 끌어오기
+      ghost: near(2.8) > 1 || (near(2.5) > 0 && Math.hypot(p.x, p.z) > room.maxR * 0.7), // 몰리면 빠져나가기
+      quake: others.length > 0 && Math.random() < 0.3,
     }[skill];
     if (ok) p.input.skill = i;
   });

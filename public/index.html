@@ -21,10 +21,19 @@
     <div class="bottom">
     <div class="start-box">
       <input id="nickname" maxlength="10" placeholder="닉네임" autocomplete="off">
-      <button id="start">게임 시작</button>
+      <button id="start">⚡ 빠른 시작</button>
     </div>
+    <div class="room-box">
+      <button id="create">🏠 방 만들기</button>
+      <input id="room-code" maxlength="4" placeholder="방 코드 4자리" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+      <button id="join">입장</button>
+    </div>
+    <div id="title-error" hidden></div>
     <button id="practice">🤖 봇이랑 연습하기</button>
-    <button id="btn-emotes">😜 이모티콘 고르기</button>
+    <div class="deco-row">
+      <button id="btn-hats">👑 모자 고르기</button>
+      <button id="btn-emotes">😜 이모티콘 고르기</button>
+    </div>
     <div class="controls"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 <kbd class="wide">Space</kbd> 밀치기 <kbd>마우스</kbd> 시점</div>
       <div class="controls-sub">게임 중 화면을 클릭하면 마우스로 시점을 돌려요 (Esc로 해제)</div>
     </div>
@@ -34,10 +43,12 @@
   <div id="hud" hidden>
     <div id="scoreboard"></div>
     <div id="rule" hidden></div>
+    <div id="status" hidden></div>
     <div id="message"></div>
     <div id="skills" hidden></div>
     <div id="emotes"></div>
     <button id="mute" title="음량">🔊</button>
+    <button id="leave" title="게임 나가기">🚪</button>
     <div id="volume" hidden><input type="range" min="0" max="100" step="5"><span>70</span></div>
     <div id="help"><kbd>WASD</kbd> 이동 <kbd>Space</kbd> 밀치기 <kbd>Q</kbd><kbd>E</kbd> 스킬 <kbd>마우스</kbd> 시점 <kbd>1~4</kbd> 감정</div>
   </div>
@@ -60,14 +71,26 @@
     </div>
   </div>
 
+  <!-- 모자 고르기 -->
+  <div id="hat-picker" hidden>
+    <div class="ep-box hp-box">
+      <div class="ep-title">모자 고르기</div>
+      <div class="ep-sub">눌러 보면 뒤에 있는 캐릭터가 바로 써 봐요</div>
+      <div class="hp-grid"></div>
+      <div class="ep-buttons"><button class="ep-done">완료</button></div>
+    </div>
+  </div>
+
   <!-- 대기실 -->
   <div id="lobby" hidden>
     <div class="lobby-box">
       <div class="lobby-title">대기실</div>
+      <div class="lobby-code"></div>
       <div class="lobby-list"></div>
-      <button id="btn-bots">🤖 빈자리 AI 채우기: 켬</button>
+      <button id="btn-bots">🙅 빈자리 AI 채우기: 끔</button>
       <button id="btn-start">시작하기</button>
       <div class="lobby-timer"></div>
+      <button id="btn-lobby-exit">나가기</button>
     </div>
   </div>
 
@@ -94,6 +117,7 @@
   <!-- 능력 선택 -->
   <div id="cards" hidden>
     <div class="cards-title">능력 카드를 한 장 고르세요</div>
+    <div class="cards-luck" hidden>🍀 역전 찬스! 좋은 카드가 더 잘 나와요</div>
     <div class="list"></div>
     <div class="timer"></div>
     <div id="swap-skill" hidden></div>
