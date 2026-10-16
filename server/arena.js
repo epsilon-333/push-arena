@@ -59,7 +59,7 @@ export class Arena {
 
   // 바닥 붕괴: 처음 밟으면 균열, 균열 난 타일을 다시 밟으면 crumbleTime 뒤 사라짐,
   // 사라진 타일은 respawnTime 뒤 다시 생김. "밟기" = 다른 타일에서 이 타일로 들어온 순간.
-  // walkers: [{ id, x, z }]
+  // walkers: [{ id, x, z, delay? }]  (delay: 이 사람이 밟아 무너지게 된 타일이 추가로 버티는 시간)
   updateCrumble(dt, walkers, crumbleTime, respawnTime) {
     for (const w of walkers) {
       const t = this.tileAt(w.x, w.z);
@@ -68,7 +68,7 @@ export class Arena {
       this.standing.set(w.id, key);
       if (!t || t.protected) continue; // 영역 표시된 타일은 금이 안 감
       if (t.state === 'alive') { t.state = 'cracked'; this.version++; }
-      else if (t.state === 'cracked') { t.state = 'crumbling'; t.timer = crumbleTime; this.version++; }
+      else if (t.state === 'cracked') { t.state = 'crumbling'; t.timer = crumbleTime + (w.delay || 0); this.version++; }
     }
     for (const t of this.tiles.values()) {
       if (t.state !== 'crumbling' && t.state !== 'gone') continue;
@@ -109,6 +109,22 @@ export class Arena {
     t.state = 'alive';
     this.version++;
     return true;
+  }
+
+  // 중앙에서 몇 겹째 타일인지 (중앙 0, 가장자리 = rings)
+  ringOf(t) { return Math.max(Math.abs(t.q), Math.abs(t.r), Math.abs(t.q + t.r)); }
+
+  // 타일 복구: 범위 안의 구멍·무너지는 타일·금 간 타일을 모두 정상으로. 복구한 타일 목록을 돌려줌
+  restoreArea(x, z, r) {
+    const restored = [];
+    for (const t of this.tiles.values()) {
+      if (t.state === 'alive' || Math.hypot(t.x - x, t.z - z) > r) continue;
+      t.state = 'alive';
+      t.timer = 0;
+      restored.push(t);
+    }
+    if (restored.length) this.version++;
+    return restored;
   }
 
   fillHole(t) {

@@ -80,6 +80,17 @@ const SFX = {
     [523, 659, 784, 1047].forEach(f => tone(f, 0.9, { type: 'sine', vol: 0.16, delay: 0.32 }));
     noise(0.5, { vol: 0.15, from: 6000, to: 9000, q: 2, delay: 0.3 });
   },
+  // 신화 카드: 낮은 울림 + 올라가는 화음 + 반짝임
+  mythic: () => {
+    tone(70, 1.3, { type: 'sawtooth', vol: 0.35, slide: 0.6 });
+    [392, 523, 659, 784, 1047, 1319, 1568, 2093].forEach((f, i) => tone(f, 0.45, { type: 'triangle', vol: 0.2, delay: 0.1 + i * 0.07 }));
+    [262, 330, 392, 523].forEach(f => tone(f, 1.5, { type: 'sine', vol: 0.18, delay: 0.75 }));
+    noise(0.9, { vol: 0.2, from: 5000, to: 10000, q: 2, delay: 0.5 });
+  },
+  timestop: () => {
+    [880, 660, 440, 330].forEach((f, i) => tone(f, 0.3, { type: 'sine', vol: 0.3, delay: i * 0.08 }));
+    noise(0.5, { vol: 0.2, from: 2000, to: 200 });
+  },
   // 새 카드
   slip: v => { tone(900, 0.4, { type: 'sine', vol: 0.3 * v, slide: 0.3 }); noise(0.25, { vol: 0.25 * v, from: 2500, to: 600 }); },
   mirror: v => [880, 740, 622, 523].forEach((f, i) => tone(f, 0.12, { type: 'sine', vol: 0.2 * v, delay: i * 0.05 })),

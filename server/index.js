@@ -61,7 +61,8 @@ function findQuickRoom() {
 
 const catalog = ABILITIES.map(publicInfo);
 const skillCd = Object.fromEntries(Object.entries(SKILLS).map(([k, s]) => [k, s.cd]));
-const physics = { accel: CONFIG.MOVE_ACCEL, maxSpeed: CONFIG.MAX_SPEED, friction: CONFIG.FRICTION, iceFriction: CONFIG.ICE_FRICTION, iceAccel: CONFIG.ICE_ACCEL_MULT, tiltGravity: CONFIG.TILT_GRAVITY, tick: CONFIG.TICK_RATE };
+const physics = { accel: CONFIG.MOVE_ACCEL, maxSpeed: CONFIG.MAX_SPEED, friction: CONFIG.FRICTION, iceFriction: CONFIG.ICE_FRICTION, iceAccel: CONFIG.ICE_ACCEL_MULT, tiltGravity: CONFIG.TILT_GRAVITY, tick: CONFIG.TICK_RATE,
+  spin: CONFIG.SPIN_ACCEL, spinOut: CONFIG.SPIN_OUT, maxR: CONFIG.HEX_SIZE * 1.5 * CONFIG.HEX_RINGS }; // 회전판 예측용
 
 const send = (socket, obj) => { if (socket?.readyState === 1) socket.send(JSON.stringify(obj)); };
 

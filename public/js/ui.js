@@ -7,12 +7,17 @@ export const ICONS = {
   sneeze: '🤧', revenge: '🎯', territory: '🚩', king: '🤴',
   dash: '💨', shield: '🛡️', shockwave: '💥', swap: '🔄', slam: '⬇️', blackhole: '🌀',
   gambler: '🎲', edge_king: '👑', ice_trail: '❄️', reflect: '🪞', sticky: '🍯',
+  mine: '🧨', jump: '🦘', restore: '🛠️', teleport: '🌠', icezone: '🥶', bowling: '🎳', clone: '👥',
+  grit: '😤', combo: '🔗', quickfire: '🔫',
+  giant: '🦖', timestop: '⏳', meteor: '☄️', phoenix: '🦅',
   glass_cannon: '💣', slow_tank: '🐢', rampage: '🔥', one_punch: '👊', feather: '🪶',
 };
 const SKILL_CARD = { dash: 'dash', shield: 'shield', shockwave: 'shockwave', swap: 'swap', slam: 'slam', blackhole: 'blackhole',
-  banana: 'banana', mirror: 'mirror', magnet: 'magnet', ghost: 'ghost', quake: 'quake' };
+  banana: 'banana', mirror: 'mirror', magnet: 'magnet', ghost: 'ghost', quake: 'quake',
+  mine: 'mine', jump: 'jump', restore: 'restore', teleport: 'teleport', icezone: 'icezone', bowling: 'bowling', clone: 'clone',
+  giant: 'giant', timestop: 'timestop', meteor: 'meteor', phoenix: 'phoenix' };
 const KIND_NAME = { stat: '스탯', skill: '스킬', rule: '규칙', trade: '트레이드오프' };
-const RARITY_NAME = { common: '일반', rare: '희귀', legend: '전설' };
+const RARITY_NAME = { common: '일반', rare: '희귀', legend: '전설', mythic: '신화' };
 const icon = id => ICONS[id] ?? '✨';
 
 // 감정 이모티콘 / 도발 (서버는 번호만 안다. 순서를 바꾸면 안 됨 — 서버 EMOTE_COUNT와 개수 맞춤)
@@ -233,22 +238,22 @@ function dealCard(o, i, mySkills, choose, onFlip) {
   list.appendChild(card);
   setTimeout(() => card.classList.add('dealt'), 50 + i * 120);    // 아래에서 날아옴
   // 전설 카드는 뒷면이 금빛으로 떨다가 조금 늦게 뒤집힘 (두근두근)
-  const flipAt = 500 + i * 160 + (o.rarity === 'legend' ? 700 : 0);
+  const flipAt = 500 + i * 160 + (o.rarity === 'mythic' ? 1400 : o.rarity === 'legend' ? 700 : 0);
   setTimeout(() => {
     card.classList.add('flipped');
     onFlip?.(o);
-    if (o.rarity === 'legend') legendBurst(card);
+    if (o.rarity === 'legend' || o.rarity === 'mythic') legendBurst(card, o.rarity);
   }, flipAt);
 }
 
 // 전설 카드가 뒤집히는 순간: 뒤에서 빛줄기가 돌고 별가루가 튀어나옴
-function legendBurst(card) {
+function legendBurst(card, rarity = 'legend') {
   const fx = document.createElement('div');
-  fx.className = 'legend-fx';
+  fx.className = `legend-fx ${rarity}`;
   fx.innerHTML = '<div class="legend-rays"></div>' + Array.from({ length: 14 }, (_, i) => {
     const a = (i / 14) * Math.PI * 2, d = 110 + Math.random() * 70;
     return `<i style="--dx:${Math.cos(a) * d}px;--dy:${Math.sin(a) * d}px;--d:${Math.random() * 0.15}s">${i % 3 ? '✦' : '★'}</i>`;
-  }).join('') + '<b class="legend-word">LEGEND!</b>';
+  }).join('') + `<b class="legend-word">${rarity === 'mythic' ? 'MYTHIC!' : 'LEGEND!'}</b>`;
   card.appendChild(fx);
   card.classList.add('legend-pop');
   setTimeout(() => card.classList.remove('legend-pop'), 600);
@@ -305,6 +310,12 @@ const RULES = {
   collapse: { icon: '🧱', text: '바닥 붕괴', sub: '밟으면 금이 가고, 다시 밟으면 무너져요' },
   tilt: { icon: '⚖️', text: '기울기', sub: '사람이 몰린 쪽으로 기울어요' },
   ice: { icon: '🧊', text: '빙판길', sub: '미끄러워서 멈추기 힘들어요' },
+  shrink: { icon: '🔻', text: '축소', sub: '시간이 지나면 가장자리부터 사라져요' },
+  rain: { icon: '🕳️', text: '구멍 비', sub: '타일이 흔들리다 뚫려요' },
+  lowgrav: { icon: '🌙', text: '저중력', sub: '맞으면 훨씬 멀리 날아가요' },
+  spin: { icon: '🎡', text: '회전판', sub: '판이 돌아서 바깥으로 쓸려요' },
+  big: { icon: '🧸', text: '거대화', sub: '모두 크기가 2배예요' },
+  bounce: { icon: '🏀', text: '튀는 바닥', sub: '흔들리는 타일은 튀어올라요' },
 };
 let lastMessage = '';
 
@@ -333,7 +344,7 @@ export function renderHud(s, myId) {
   if (showRule) setHtml($('rule'), `<span class="rule-icon">${rule.icon}</span><b>${rule.text}</b><span>${rule.sub}</span>`);
 
   // 점수판: 내용이 바뀔 때만 다시 그림
-  setHtml($('scoreboard'), [...s.players].sort((a, b) => b.sc - a.sc).map(p => {
+  setHtml($('scoreboard'), s.players.filter(p => !p.cl).sort((a, b) => b.sc - a.sc).map(p => {
     const pips = Array.from({ length: winScore }, (_, i) => `<i class="${i < p.sc ? 'on' : ''}"></i>`).join('');
     const abil = p.ab.map(id => `<span title="${catalog.get(id)?.name ?? id}">${icon(id)}</span>`).join('');
     return `<div class="row ${p.id === myId ? 'me' : ''} ${p.al ? '' : 'out'}">
@@ -348,10 +359,13 @@ export function renderHud(s, myId) {
 // 내 상태 알림 (거울 세계에 걸림)
 export function updateStatus(me) {
   const el = $('status');
-  const on = me && me.mir > 0 && me.al;
-  el.hidden = !on;
-  document.body.classList.toggle('mirrored', !!on);
-  if (on) setHtml(el, `🙃 방향키 거꾸로! <b>${Math.ceil(me.mir)}</b>`);
+  const frozen = !!(me && me.fz && me.al);
+  const on = !!(me && me.mir > 0 && me.al);
+  el.hidden = !(on || frozen);
+  document.body.classList.toggle('mirrored', on);
+  document.body.classList.toggle('frozen', frozen);
+  if (frozen) setHtml(el, '⏳ 시간이 멈췄어요!');
+  else if (on) setHtml(el, `🙃 방향키 거꾸로! <b>${Math.ceil(me.mir)}</b>`);
 }
 
 // ---------- 연결 중 표시 ----------

@@ -52,6 +52,7 @@ const topMats = [toon('#c9d3f0'), toon('#b6c1e6')];
 const TILE_COLORS = {
   normal: { top: ['#c9d3f0', '#b6c1e6'], side: '#4a4f73' },
   ice: { top: ['#e8f8ff', '#c9ecfb'], side: '#6aa6cf' },
+  lowgrav: { top: ['#e0d4ff', '#cdbdf5'], side: '#5a4a8a' }, // 저중력: 보랏빛 달 표면
 };
 let tileTheme = 'normal';
 function setTileTheme(name) {
@@ -221,6 +222,94 @@ function syncBananas(list) {
   for (const [id, g] of bananaMeshes) if (!seen.has(id)) { board.remove(g); bananaMeshes.delete(id); }
 }
 
+// 지뢰 (바닥에 놓인 것). 아직 안 켜진 동안은 빨간 불이 깜빡임
+const mineBody = toon('#3a3d52'), mineLight = new THREE.MeshBasicMaterial({ color: '#ff4d4d' });
+const mineMeshes = new Map();
+function syncMines(list) {
+  const seen = new Set();
+  for (const [id, x, z, armed] of list ?? []) {
+    seen.add(id);
+    let g = mineMeshes.get(id);
+    if (!g) {
+      g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.22, 16), mineBody);
+      const light = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), mineLight);
+      light.position.y = 0.16;
+      g.add(body, light);
+      g.position.set(x, 0.12, z);
+      g.userData.light = light;
+      board.add(g);
+      mineMeshes.set(id, g);
+    }
+    g.userData.armed = !!armed;
+  }
+  for (const [id, g] of mineMeshes) if (!seen.has(id)) { board.remove(g); mineMeshes.delete(id); }
+}
+
+// 운석: 바닥에 빨간 경고 원이 차오르고, 하늘에서 불덩이가 내려옴
+const meteorRockMat = toon('#ff7a3a');
+const meteorMeshes = new Map();
+function syncMeteors(list) {
+  const seen = new Set();
+  for (const [id, x, z, left, warn, r] of list ?? []) {
+    seen.add(id);
+    let g = meteorMeshes.get(id);
+    if (!g) {
+      g = new THREE.Group();
+      const mat = o => new THREE.MeshBasicMaterial({ color: '#ff4d4d', transparent: true, opacity: o, depthWrite: false, side: THREE.DoubleSide });
+      const fill = new THREE.Mesh(new THREE.CircleGeometry(1, 40), mat(0.2));
+      fill.rotation.x = -Math.PI / 2; fill.position.y = 0.05; fill.scale.setScalar(r);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 48), mat(0.9));
+      ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06; ring.scale.setScalar(r);
+      const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(0.9, 0), meteorRockMat);
+      g.add(fill, ring, rock);
+      g.userData = { fill, rock };
+      g.position.set(x, 0, z);
+      board.add(g);
+      meteorMeshes.set(id, g);
+    }
+    const k = Math.max(0, Math.min(1, left / warn)); // 1 → 0: 떨어지는 진행
+    g.userData.rock.position.y = 0.9 + k * k * 22;
+    g.userData.rock.rotation.x += 0.2; g.userData.rock.rotation.z += 0.13;
+    g.userData.fill.material.opacity = 0.15 + (1 - k) * 0.35;
+  }
+  for (const [id, g] of meteorMeshes) if (!seen.has(id)) { board.remove(g); meteorMeshes.delete(id); }
+}
+
+// 회전판: 판 위에 도는 방향을 보여주는 호 무늬 (서버 힘 방향과 같게 돎)
+const spinFx = new THREE.Group();
+for (const r of [3.5, 6.5, 9.5, 12]) {
+  for (let k = 0; k < 3; k++) {
+    const arc = new THREE.Mesh(new THREE.RingGeometry(r - 0.12, r + 0.12, 32, 1, (k / 3) * Math.PI * 2, 0.9),
+      new THREE.MeshBasicMaterial({ color: '#ffe9a8', transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide }));
+    arc.rotation.x = -Math.PI / 2; arc.position.y = 0.04;
+    spinFx.add(arc);
+  }
+}
+spinFx.visible = false;
+board.add(spinFx);
+
+// 얼음 지대 (큰 얼음 원판, 끝날 때 옅어짐)
+const zoneGeo = new THREE.CircleGeometry(1, 40);
+const zoneMeshes = new Map();
+function syncZones(list) {
+  const seen = new Set();
+  for (const [id, x, z, r, left] of list ?? []) {
+    seen.add(id);
+    let m = zoneMeshes.get(id);
+    if (!m) {
+      m = new THREE.Mesh(zoneGeo, new THREE.MeshBasicMaterial({ color: '#cdf0ff', transparent: true, opacity: 0.6, depthWrite: false }));
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(x, 0.04, z);
+      m.scale.setScalar(r);
+      board.add(m);
+      zoneMeshes.set(id, m);
+    }
+    m.material.opacity = 0.6 * Math.min(1, left);
+  }
+  for (const [id, m] of zoneMeshes) if (!seen.has(id)) { board.remove(m); zoneMeshes.delete(id); }
+}
+
 const waveGeo = new THREE.RingGeometry(0.5, 0.75, 24, 1, -Math.PI * 0.4, Math.PI * 0.8); // 서버 ATTACK_ANGLE과 맞춤
 function spawnPushWave(group, range, color = '#ffffff') {
   const m = new THREE.Mesh(waveGeo, new THREE.MeshBasicMaterial({ color, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
@@ -329,6 +418,40 @@ function playEvents(events) {
       Sound.play('flag', e.id === myId ? 1 : volAt(e.x, e.z) * 0.5);
       spawnBurst(tmp.set(e.x, 0.5, e.z), '#ffd36b');
     }
+    else if (e.k === 'restore') { // 타일 복구: 초록 물결
+      Sound.play('flag', volAt(e.x, e.z));
+      spawnRing(e.x, e.z, e.r, '#7fe08a');
+    }
+    else if (e.k === 'timestop') { // 시간 정지
+      Sound.play('timestop', 1);
+      spawnRing(e.x, e.z, 16, '#cfe8ff');
+      shake = Math.max(shake, 0.3);
+    }
+    else if (e.k === 'meteor') { // 운석 착탄
+      Sound.play('boom', volAt(e.x, e.z));
+      spawnRing(e.x, e.z, e.r, '#ff9f43');
+      spawnBurst(tmp.set(e.x, 0.8, e.z), '#ff7a3a');
+      shake = Math.max(shake, 0.35);
+    }
+    else if (e.k === 'phoenix') { // 불사조 부활: 떨어진 자리와 부활한 자리에 불꽃
+      Sound.play('warp', 1);
+      spawnBurst(tmp.set(e.ax, 1.1, e.az), '#ff9f43');
+      spawnBurst(tmp.set(e.bx, 1.1, e.bz), '#ffd84a');
+    }
+    else if (e.k === 'phoenixon') Sound.play('flag', e.id === myId ? 1 : 0.5);
+    else if (e.k === 'bounce') { // 튀는 바닥: 타일이 솟아오름
+      const m = tileMeshes.get(e.key);
+      if (m) m.userData.bounce = { t: 0, dur: e.dur };
+      Sound.play('whoosh', 0.6);
+    }
+    else if (e.k === 'rumble') { // 운석 경고, 구멍 비, 축소 규칙의 흔들림
+      Sound.play('quake', 0.45);
+      shake = Math.max(shake, 0.2);
+    }
+    else if (e.k === 'clone') { // 분신이 생기거나 사라짐
+      Sound.play('warp', volAt(e.x, e.z));
+      spawnBurst(tmp.set(e.x, 1.1, e.z), '#8fe9ff');
+    }
     else if (e.k === 'swap') {
       Sound.play('warp', 1);
       spawnBurst(tmp.set(e.ax, 1.1, e.az), '#b07bff');
@@ -431,7 +554,7 @@ function connect(hello) {
     else if (msg.t === 'offer') {
       UI.showOffers(msg.offers, msg.skills, (id, slot) => { Sound.play('pick'); ws.send(JSON.stringify({ t: 'pick', id, slot })); }, {
         luck: msg.luck,
-        onFlip: o => Sound.play(o.rarity === 'legend' ? 'legend' : o.rarity === 'rare' ? 'rare' : 'card'), // 카드 뒤집는 소리
+        onFlip: o => Sound.play(o.rarity === 'mythic' ? 'mythic' : o.rarity === 'legend' ? 'legend' : o.rarity === 'rare' ? 'rare' : 'card'), // 카드 뒤집는 소리
       });
     }
   };
@@ -455,7 +578,7 @@ setInterval(sendInput, 1000 / 30);
 function resetWorld() {
   for (const id of [...views.keys()]) removeView(id);
   myId = null; latest = null; pred = null; inputHistory.length = 0;
-  syncOrbs([]); syncIce([]); syncBananas([]);
+  syncOrbs([]); syncIce([]); syncBananas([]); syncMines([]); syncZones([]); syncMeteors([]);
   tiltTarget.x = tiltTarget.z = 0;
 }
 
@@ -481,7 +604,7 @@ function applyState(s) {
   }
   for (const id of views.keys()) if (!seen.has(id)) removeView(id);
   tiltTarget.x = s.tilt.x; tiltTarget.z = s.tilt.z;
-  setTileTheme(s.rule === 'ice' ? 'ice' : 'normal');
+  setTileTheme(s.rule === 'ice' ? 'ice' : s.rule === 'lowgrav' ? 'lowgrav' : 'normal');
   // 라운드 시작하면 카메라를 내 캐릭터 정면 방향으로
   const me = s.players.find(p => p.id === myId);
   if (me && s.phase === 'countdown' && latestPhase !== 'countdown') camYaw = me.f;
@@ -490,6 +613,10 @@ function applyState(s) {
   syncOrbs(s.orbs);
   syncIce(s.ice);
   syncBananas(s.bananas);
+  syncMines(s.mines);
+  syncZones(s.zones);
+  syncMeteors(s.meteors);
+  spinFx.visible = s.rule === 'spin' && (s.phase === 'countdown' || s.phase === 'playing' || s.phase === 'roundEnd');
   UI.updateStatus(me); // 거울 세계에 걸리면 화면에 표시
   playEvents(s.ev);
   UI.renderHud(s, myId);
@@ -617,6 +744,14 @@ function stepPred(st, ix, iz, me, dt) {
   if (moving && sp > maxSpeed) { const over = Math.max(maxSpeed, sp - accel * dt); st.vx *= over / sp; st.vz *= over / sp; }
   const g = P.tiltGravity * (1 - slide);
   st.vx += latest.tilt.x * g * dt; st.vz += latest.tilt.z * g * dt;
+  if (latest.rule === 'spin') { // 회전판 (서버 room.js와 같은 식)
+    const rr = Math.hypot(st.x, st.z);
+    if (rr > 0.05) {
+      const k = Math.min(1, rr / P.maxR) * (1 - slide);
+      st.vx += (-st.z / rr * P.spin + st.x / rr * P.spinOut) * k * dt;
+      st.vz += (st.x / rr * P.spin + st.z / rr * P.spinOut) * k * dt;
+    }
+  }
   const fr = Math.max(0, 1 - friction * dt);
   st.vx *= fr; st.vz *= fr;
   st.x += st.vx * dt; st.z += st.vz * dt;
@@ -727,7 +862,9 @@ function frame(now) {
       const pos = board.localToWorld(tmp.copy(me.char.root.position));
       const groundY = falling ? 0 : pos.y;
       // 평소: 멀고 높게 (주변이 넓게 보임). 뒤로 걷는 중(backView → 1): 살짝 더 물러나고 올라감
-      const dist = 12 + 2 * backView, height = 8.5 + 1.5 * backView, ahead = 3 - 2 * backView;
+      // 크기가 커진 캐릭터(거대화, 거인 변신)는 화면을 가리므로 카메라를 그만큼 더 뒤로/위로
+      const camK = 1 + ((me.szNow || 1) - 1) * 0.7;
+      const dist = (12 + 2 * backView) * camK, height = (8.5 + 1.5 * backView) * camK, ahead = (3 - 2 * backView) * camK;
       if (!falling) camGoal.set(pos.x - fx * dist, groundY + height, pos.z - fz * dist);
       lookGoal.set(pos.x + (falling ? 0 : fx * ahead), pos.y, pos.z + (falling ? 0 : fz * ahead));
     } else {
@@ -752,6 +889,13 @@ function frame(now) {
   // 타일: 무너지는 중 = 흔들림, 사라짐 = 아래로 떨어짐
   for (const mesh of tileMeshes.values()) {
     const d = mesh.userData;
+    if (d.bounce) { // 튀는 바닥: 사람이 뜨는 곡선(sin, 높이 2.4)과 똑같이 올라갔다 내려옴
+      d.bounce.t += dt;
+      const k = d.bounce.t / d.bounce.dur;
+      if (k >= 1) { d.bounce = null; d.rising = false; mesh.position.y = d.base.y; }
+      else mesh.position.y = d.base.y + Math.sin(k * Math.PI) * 2.4;
+      continue;
+    }
     if (d.rising) {
       mesh.position.y += (d.base.y - mesh.position.y) * (1 - Math.exp(-dt * 10));
       if (Math.abs(mesh.position.y - d.base.y) < 0.01) { mesh.position.y = d.base.y; d.rising = false; }
@@ -778,6 +922,8 @@ function frame(now) {
   }
 
   for (const g of bananaMeshes.values()) g.scale.setScalar(Math.min(1, g.scale.x + dt * 5)); // 톡 하고 나타남
+  if (spinFx.visible) spinFx.rotation.y -= dt * 0.6; // 서버 힘 방향(반시계 위에서 보면)과 맞춤
+  for (const g of mineMeshes.values()) g.userData.light.visible = g.userData.armed || Math.floor(t * 8) % 2 === 0; // 켜지기 전엔 깜빡임
 
   // 효과
   for (let i = effects.length - 1; i >= 0; i--) {
@@ -805,12 +951,14 @@ function frame(now) {
     root.position.z += (tz - root.position.z) * k;
     // 낙하 / 내려찍기 점프
     root.position.y = p.air > 0 ? Math.sin(p.air * Math.PI) * 2.4 : -p.fall * p.fall * 12;
-    root.scale.setScalar(1.05 * (p.sz || 1)); // 크기 카드
-    v.shield.visible = p.sh;
-    v.ghost.visible = p.gh;
-    if (p.gh) v.ghost.material.opacity = 0.25 + Math.sin(t * 12) * 0.1;
+    v.szNow = (v.szNow ?? (p.sz || 1)) + ((p.sz || 1) - (v.szNow ?? (p.sz || 1))) * (1 - Math.exp(-dt * 10)); // 거인 변신은 부드럽게 커짐
+    root.scale.setScalar(1.05 * v.szNow); // 크기 카드
+    v.shield.visible = p.sh || p.ph; // 방어막(하늘색) / 불사조 대기(주황)
+    v.shield.material.color.set(p.sh ? '#7fd6ff' : '#ff9f43');
+    v.ghost.visible = p.gh || p.cl || p.fz; // 분신(하늘색)·시간 정지(얼음색)도 반투명 몸으로 구분
+    if (p.gh || p.cl || p.fz) { v.ghost.material.opacity = 0.25 + Math.sin(t * 12) * 0.1; v.ghost.material.color.set(p.fz ? '#bfe8ff' : p.cl ? '#8fe9ff' : '#eef6ff'); }
     v.char.rig.rotation.y = p.sl ? t * 16 : 0; // 바나나: 빙글빙글
-    if (p.sh) v.shield.material.opacity = 0.22 + Math.sin(t * 8) * 0.08;
+    if (p.sh || p.ph) v.shield.material.opacity = 0.22 + Math.sin(t * 8) * 0.08;
     if (p.dash) { // 돌진 흔적
       v.dashPuff -= dt;
       if (v.dashPuff <= 0) { spawnBurst(tmp.set(root.position.x, 0.4, root.position.z), '#dfe8ff'); v.dashPuff = 0.04; }
@@ -835,7 +983,7 @@ function frame(now) {
     }
 
     // 이름/체력바를 화면 좌표로
-    tmp.set(root.position.x, root.position.y + 2.35, root.position.z);
+    tmp.set(root.position.x, root.position.y + 2.35 * (v.szNow || 1), root.position.z);
     board.localToWorld(tmp).project(camera);
     UI.updateLabel(v.label, p, p.id === myId, (tmp.x * 0.5 + 0.5) * innerWidth, (-tmp.y * 0.5 + 0.5) * innerHeight);
   }

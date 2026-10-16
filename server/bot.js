@@ -22,7 +22,7 @@ export function updateBot(p, room, dt) {
 
   const arena = room.arena;
   const maxR = arena.size * 1.5 * arena.rings;
-  const others = [...room.players.values()].filter(o => o !== p && o.alive && o.fallTimer === 0);
+  const others = [...room.players.values()].filter(o => room.teamOf(o) !== room.teamOf(p) && o.alive && o.fallTimer === 0);
   let target = null, best = Infinity;
   for (const o of others) {
     const d = Math.hypot(o.x - p.x, o.z - p.z);
@@ -89,6 +89,17 @@ function useSkills(p, room, target, dist, others) {
       magnet: facingTarget && dist > 2.5 && dist < 6.5 && Math.hypot(p.x, p.z) < room.maxR * 0.5, // 가운데서 끌어오기
       ghost: near(2.8) > 1 || (near(2.5) > 0 && Math.hypot(p.x, p.z) > room.maxR * 0.7), // 몰리면 빠져나가기
       quake: others.length > 0 && Math.random() < 0.3,
+      mine: dist < 4.5,                                  // 쫓아오는 상대 앞에 깔기
+      jump: near(2.2) > 0 && Math.random() < 0.3,        // 붙었을 때 가끔 뜀
+      restore: [...room.arena.tiles.values()].some(t => t.state !== 'alive' && Math.hypot(t.x - p.x, t.z - p.z) < C.RESTORE_RADIUS * 0.7),
+      teleport: facingTarget && dist > 4.5 && dist < 9,  // 멀리 있는 상대 앞으로
+      icezone: near(3.5) > 0,
+      bowling: facingTarget && dist < 7,
+      clone: dist < 7,
+      giant: dist < 5,
+      timestop: near(5) > 0,
+      meteor: others.length > 0 && Math.random() < 0.4,
+      phoenix: Math.hypot(p.x, p.z) > room.maxR * 0.7,   // 가장자리로 몰렸을 때
     }[skill];
     if (ok) p.input.skill = i;
   });
