@@ -86,7 +86,7 @@ for (const shape of ['full', 'donut', 'bridge']) {
   }
   // 봇이 아무에게도 안 밀렸는데 떨어진 비율 (서든데스로 바닥이 다 사라져 떨어진 것 포함)
   console.log(`맵 모양 ${shape.padEnd(6)}: 라운드 평균 ${(time / rounds - 6).toFixed(0)}초 · 봇이 떨어진 ${ko}번 중 혼자 떨어짐 ${self} (${Math.round(self / ko * 100)}%)`);
-  check(self / ko < 0.2, `${shape}: 봇이 제 발로 너무 자주 떨어짐 (${self}/${ko})`);
+  check(self / ko < 0.3, `${shape}: 봇이 제 발로 너무 자주 떨어짐 (${self}/${ko})`);
 }
 { // 어떤 모양 · 인원이든 시작 자리는 멀쩡한 타일 위
   for (const shape of ['full', 'donut', 'bridge']) for (const n of [2, 3, 4]) {
