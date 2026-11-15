@@ -1030,7 +1030,7 @@ function frame(now) {
       lookGoal.set(pos.x + (falling ? 0 : fx * ahead), pos.y, pos.z + (falling ? 0 : fz * ahead));
     } else {
       // 탈락/대기 중: 맵 전체 보기
-      camGoal.copy(GAME_CAM.pos); lookGoal.copy(GAME_CAM.look);
+      camGoal.copy(GAME_CAM.pos).multiplyScalar(latest?.shape === 'cross' ? 1.8 : 1); lookGoal.copy(GAME_CAM.look); // 큰 판은 멀리서
     }
     // 결정타 슬로모션: 떨어지는 사람 쪽을 바라봄 (구경 중이면 가까이 다가감)
     if (slowFocus) {

@@ -10,6 +10,8 @@ const SHAPES = {
   bridge: t => Math.abs(t.x) > 1.1 || Math.abs(t.z) < 2,          // 가운데 세로 틈, 한가운데만 다리
   cross: t => Math.abs(t.x) < 3.2 || Math.abs(t.z) < 2.9,         // 가로 · 세로 띠만 남은 십자가
 };
+// 모양마다 판 크기 배율 (십자가는 날을 길게 하려고 2배)
+const SHAPE_RINGS = { cross: 2 };
 export const isShape = name => name in SHAPES;
 
 export class Arena {
@@ -23,6 +25,8 @@ export class Arena {
 
   reset(shape = 'full') {
     this.shape = isShape(shape) ? shape : 'full';
+    this.baseRings ??= this.rings;
+    this.rings = this.baseRings * (SHAPE_RINGS[this.shape] ?? 1);
     this.tiles.clear();
     this.standing = new Map(); // 플레이어 id -> 마지막으로 서 있던 타일 key
     const N = this.rings;
@@ -30,7 +34,7 @@ export class Arena {
       for (let r = Math.max(-N, -q - N); r <= Math.min(N, -q + N); r++) {
         const { x, z } = this.toWorld(q, r);
         const t = { q, r, x, z, state: 'alive', timer: 0 };
-        if (!SHAPES[this.shape](t, this.ringOf(t))) Object.assign(t, { state: 'gone', timer: Infinity, dead: true });
+        if (!SHAPES[this.shape](t, this.ringOf(t))) continue; // 모양 밖 타일은 아예 없음
         this.tiles.set(`${q},${r}`, t);
       }
     }
@@ -165,7 +169,7 @@ export class Arena {
   }
 
   // 시작 위치용: 맵 중심에서 이 정도 떨어진 곳 (맵 모양에 따라 구멍일 수 있어 nearestTile로 맞춤)
-  get spawnRadius() { return this.size * 1.5 * this.rings * 0.6; }
+  get spawnRadius() { return this.size * 1.5 * (this.baseRings ?? this.rings) * 0.6; } // 큰 판에서도 시작은 가운데 근처
 
   serialize() {
     return { size: this.size, version: this.version, tiles: [...this.tiles.values()].map(t => [t.q, t.r, t.protected && t.state === 'alive' ? 4 : STATE_CODE[t.state]]) };
