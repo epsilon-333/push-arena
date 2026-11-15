@@ -428,6 +428,40 @@ export function banner(text, kind = 'info', sub = '', pos = '') {
   bannerTimer = setTimeout(() => { el.hidden = true; }, kind === 'info' ? 2600 : 1700);
 }
 
+// ---------- 게임패드로 고르기 ----------
+// 카드 · 스킬 바꾸기 · 대기실 · 순위 화면이 떠 있으면 좌우로 고르고 A로 누른다. 그런 화면이 떠 있으면 true
+let padList = [], padReadyAt = 0;
+function padTargets() {
+  const vis = el => el && !el.hidden && el.getClientRects().length > 0; // (고정 위치 요소는 offsetParent가 없어서 이렇게 봄)
+  if (vis($('swap-skill'))) return [...$('swap-skill').querySelectorAll('button')];
+  if (vis($('cards'))) return $('cards').classList.contains('done') ? [] : [...document.querySelectorAll('#cards .card.flipped')];
+  if (vis($('results'))) return [$('btn-restart'), $('btn-exit')].filter(b => !b.disabled);
+  if (vis($('lobby'))) return [$('btn-start'), $('btn-lobby-exit')].filter(b => !b.disabled);
+  return [];
+}
+export function padNav(dir, ok, back) {
+  const list = padTargets();
+  const menuOpen = list.length > 0 || !$('cards').hidden;
+  // 화면이 바뀌면 처음 칸(카드는 가운데)에 표시하고, 잠깐은 A를 받지 않음 (밀치기를 연타하다 실수로 고르지 않게)
+  if (list.length !== padList.length || list.some((e, i) => e !== padList[i])) {
+    document.querySelectorAll('.pad-focus').forEach(e => e.classList.remove('pad-focus'));
+    padList = list;
+    padReadyAt = performance.now() + 700;
+    if (list.length) list[list[0].classList.contains('card') ? Math.floor((list.length - 1) / 2) : 0].classList.add('pad-focus');
+    return menuOpen;
+  }
+  if (!list.length) return menuOpen;
+  let i = Math.max(0, list.findIndex(e => e.classList.contains('pad-focus')));
+  if (dir) {
+    list[i].classList.remove('pad-focus');
+    i = (i + dir + list.length) % list.length;
+    list[i].classList.add('pad-focus');
+  }
+  if (ok && performance.now() > padReadyAt) list[i].click();
+  if (back) list.find(e => e.classList.contains('cancel'))?.click();
+  return menuOpen;
+}
+
 // 내 상태 알림 (거울 세계에 걸림)
 export function updateStatus(me) {
   const el = $('status');

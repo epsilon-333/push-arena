@@ -13,6 +13,11 @@ const match = (o = {}) => ({ id: `m${Math.random()}`, kind: 'quick', bl: 1, roun
 // 서버와 개수 맞춤
 check(P.TITLES.length === C.TITLE_COUNT, `칭호 수 ${P.TITLES.length} = 서버 TITLE_COUNT ${C.TITLE_COUNT}`);
 check(P.HAT_UNLOCK.length === C.HAT_COUNT, `모자 해금 표 ${P.HAT_UNLOCK.length} = 서버 HAT_COUNT ${C.HAT_COUNT}`);
+{ // 모자 목록(character.js HATS)의 길이: three 없이 읽을 수 없어서 항목 수를 글자로 셈
+  const src = (await import('node:fs')).readFileSync(new URL('../public/js/character.js', import.meta.url), 'utf8');
+  const hats = src.slice(src.indexOf('export const HATS = ['), src.indexOf('export class Character')).match(/\{ icon: /g).length;
+  check(hats === C.HAT_COUNT, `모자 수 ${hats} = 서버 HAT_COUNT ${C.HAT_COUNT}`);
+}
 const achIds = new Set(P.ACHIEVEMENTS.map(a => a.id));
 check(achIds.size === P.ACHIEVEMENTS.length, '도전 과제 id가 겹치면 안 됨');
 for (const r of [...P.TITLES, ...P.HAT_UNLOCK]) if (r.ach) check(achIds.has(r.ach), `해금 조건의 도전 과제가 없음: ${r.ach}`);

@@ -6,6 +6,7 @@ import * as Sound from './js/audio.js';
 import { Podium } from './js/podium.js';
 import { Fx } from './js/fx.js';
 import * as Meta from './js/meta.js';
+import * as Pad from './js/gamepad.js';
 
 // ---------- 씬 기본 구성 ----------
 // 폰은 가볍게: 안티앨리어싱 끔, 해상도·그림자 품질 낮춤
@@ -59,6 +60,13 @@ const TILE_COLORS = {
   normal: { top: ['#c9d3f0', '#b6c1e6'], side: '#4a4f73' },
   ice: { top: ['#e8f8ff', '#c9ecfb'], side: '#6aa6cf' },
   lowgrav: { top: ['#e0d4ff', '#cdbdf5'], side: '#5a4a8a' }, // 저중력: 보랏빛 달 표면
+  collapse: { top: ['#ecdcc0', '#dcc8a6'], side: '#7a5a3c' }, // 바닥 붕괴: 바삭한 모래 과자
+  tilt: { top: ['#cfe6d8', '#b9d8c6'], side: '#3f6b5a' },     // 기울기: 풀빛 시소
+  shrink: { top: ['#f3d2cf', '#e8bdb9'], side: '#7a3f48' },   // 축소: 붉은 경고
+  rain: { top: ['#c9e4ee', '#b2d5e3'], side: '#35607a' },     // 구멍 비: 비 오는 청록
+  spin: { top: ['#f6e7b4', '#ecd894'], side: '#8a6a2a' },     // 회전판: 놀이공원 노랑
+  big: { top: ['#d6ecc0', '#c2e0a6'], side: '#4f7a3a' },      // 거대화: 장난감 초록
+  bounce: { top: ['#f6d0e6', '#eebbd8'], side: '#8a4a72' },   // 튀는 바닥: 젤리 분홍
 };
 let tileTheme = 'normal';
 function setTileTheme(name) {
@@ -68,6 +76,7 @@ function setTileTheme(name) {
   topMats.forEach((m, i) => m.color.set(c.top[i]));
   crackedTop.color.set(c.top[0]);
   sideMat.color.set(c.side);
+  decoMat.color.set(c.side).multiplyScalar(0.8); // 아래에 떠다니는 조각도 같은 계열로
 }
 const crumbleTop = toon('#ff8a5c');
 const flagTop = toon('#ffd36b'); // 영역 표시로 보호된 타일
@@ -679,7 +688,9 @@ function applyState(s) {
   }
   for (const id of views.keys()) if (!seen.has(id)) removeView(id);
   tiltTarget.x = s.tilt.x; tiltTarget.z = s.tilt.z;
-  setTileTheme(s.rule === 'ice' ? 'ice' : s.rule === 'lowgrav' ? 'lowgrav' : 'normal');
+  const themed = s.phase === 'countdown' || s.phase === 'playing' || s.phase === 'roundEnd';
+  setTileTheme(themed && TILE_COLORS[s.rule] ? s.rule : 'normal');
+  document.body.dataset.rule = themed ? s.rule : ''; // 하늘 색 (style.css)
   // 라운드 시작하면 카메라를 내 캐릭터 정면 방향으로
   const me = s.players.find(p => p.id === myId);
   if (me && s.phase === 'countdown' && latestPhase !== 'countdown') camYaw = me.f;
@@ -701,12 +712,13 @@ function applyState(s) {
   UI.renderHud(s, myId);
   UI.updateSkillHud(me);
   if (s.phase === 'gameOver' && prevPhase !== 'gameOver') resultsAt = performance.now() + 2500;
+  if (s.phase === 'gameOver') Meta.onGameOver(s, myId); // 보상은 바로 저장 (순위 화면 전에 나가도 남게)
   prevPhase = s.phase;
   UI.updateResults(s, myId, resultsAt);
   // 순위 화면이 뜨는 순간 카메라를 시상대로 (순위 화면이 닫히면 맵으로)
   const showPodium = s.phase === 'gameOver' && s.results && performance.now() > resultsAt;
   if (showPodium) {
-    if (!podium.visible) { podium.show(s.results); podiumCam(true); Sound.play('fanfare'); Meta.onGameOver(s, myId); }
+    if (!podium.visible) { podium.show(s.results); podiumCam(true); Sound.play('fanfare'); Meta.showRewards(); }
     else podium.show(s.results);
   } else if (podium.visible) podium.hide();
   document.getElementById('labels').hidden = podium.visible;
@@ -808,6 +820,20 @@ muteBtn.onclick = () => { Sound.unlock(); volBox.hidden = !volBox.hidden; muteBt
 volSlider.oninput = () => { Sound.unlock(); Sound.setVolume(volSlider.value / 100); showVol(); };
 volSlider.onchange = () => { Sound.play('click'); volSlider.blur(); };
 
+// 게임패드: 매 프레임 읽어서 버튼은 바로 예약하고, 스틱 값은 sendInput이 씀
+let pad = Pad.read();
+function pollPad(dt) {
+  pad = Pad.read();
+  if (!pad.on) return;
+  document.body.classList.add('pad');
+  const menu = UI.padNav(pad.nav, pad.ok, pad.back); // 카드 · 대기실 · 순위 화면이 떠 있으면 거기서 씀
+  if (mode !== 'game' || menu) return;
+  camYaw += pad.look * dt * 2.8;
+  if (pad.attack) attackQueued = true;
+  if (pad.skill >= 0) skillQueued = pad.skill;
+  if (pad.emote >= 0) sendEmote(UI.emoteSlot(pad.emote));
+}
+
 const stick = initTouch({
   canvas,
   onAttack: () => { attackQueued = true; },
@@ -866,8 +892,9 @@ function sendInput() {
   if (ws?.readyState !== 1) return;
   // 카메라 기준 이동: W = 카메라가 보는 방향
   // 키보드 + 폰 조이스틱 (조이스틱 위쪽 = 앞)
-  const fwd = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - stick.y;
-  const right = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + stick.x;
+  // 키보드 + 폰 조이스틱 + 게임패드 왼쪽 스틱
+  const fwd = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - stick.y - pad.y;
+  const right = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + stick.x + pad.x;
   moveBack = fwd < -0.3; // 뒤로 가는 중이면 카메라를 살짝 뒤로 물림
   const fx = Math.cos(camYaw), fz = Math.sin(camYaw);
   let x = fx * fwd - fz * right, z = fz * fwd + fx * right;
@@ -933,6 +960,7 @@ function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const t = now / 1000;
+  pollPad(dt);
 
   // 카메라
   if (mode === 'title') {

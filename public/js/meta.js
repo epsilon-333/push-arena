@@ -210,11 +210,14 @@ function onBodyClick(e) {
 
 // ---------- 게임 끝: 보상 ----------
 export function resetMatch() {
+  pendingReport = null;
   const el = document.querySelector('#results .rewards');
   if (el) { el.hidden = true; el.innerHTML = ''; el.closest('.results-box').classList.remove('has-rewards'); }
 }
 
-// 순위 화면이 뜨는 순간 한 번. s: 서버 상태(gameOver), myId: 내 id
+// 게임이 끝난 순간 한 번: 보상을 계산해 바로 저장한다 (화면에는 순위 화면이 뜰 때 showRewards로)
+// s: 서버 상태(gameOver), myId: 내 id
+let pendingReport = null;
 export function onGameOver(s, myId) {
   const me = s.results?.find(r => r.id === myId);
   if (!me || !s.match || rewardedMatch === s.match.id) return;
@@ -223,10 +226,13 @@ export function onGameOver(s, myId) {
   if (report.dup) return; // 새로고침 뒤 다시 들어온 경우: 이미 받음
   persist();
   renderProfile();
-  showRewards(report);
+  pendingReport = report;
 }
 
-function showRewards(r) {
+export function showRewards() {
+  const r = pendingReport;
+  pendingReport = null;
+  if (!r) return;
   const el = document.querySelector('#results .rewards');
   const chips = [];
   if (r.levelUps > 0) chips.push(`<i class="chip lv">🎊 레벨 ${r.after.level} 달성!</i>`);

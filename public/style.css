@@ -902,3 +902,28 @@ body.touch .feed-row { animation-name: feed-in-left; }
 body.touch .feed-row.out { transform: translateX(-20px); }
 @keyframes feed-in-left { from { transform: translateX(-40px); opacity: 0; } }
 @media (max-width: 999px) { .results-box.has-rewards { max-height: 58vh; } }
+
+/* ================= 게임패드 ================= */
+#help-pad { display: none; position: absolute; left: 14px; bottom: 14px; align-items: center; gap: 4px; white-space: nowrap; font-size: 14px; opacity: .9; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+body.pad #help { display: none; }
+body.pad:not(.touch) #help-pad { display: flex; }
+body.podium #help-pad { display: none; }
+.pad-focus { outline: 5px solid #ffd84a; outline-offset: 4px; border-radius: 16px; }
+.card.pad-focus { outline-offset: 8px; transform: translateY(-14px) !important; }
+
+/* ================= 맵 규칙마다 다른 하늘 ================= */
+body { transition: background-color .6s; }
+body::before { /* 규칙 색이 원래 배경 위로 부드럽게 겹침 */
+  content: ''; position: fixed; inset: 0; z-index: -1; opacity: 0; transition: opacity .8s; pointer-events: none;
+  background: var(--sky, none);
+}
+body[data-rule]:not([data-rule=""])::before { opacity: 1; }
+body[data-rule="collapse"] { --sky: radial-gradient(ellipse at 50% 35%, #8a5a3a 0%, #4a2a22 55%, #1c0f10 100%); }
+body[data-rule="tilt"] { --sky: radial-gradient(ellipse at 50% 35%, #2f7a66 0%, #17403d 55%, #0a1a1c 100%); }
+body[data-rule="ice"] { --sky: radial-gradient(ellipse at 50% 35%, #5aa8d8 0%, #1f4f86 55%, #0b1a38 100%); }
+body[data-rule="shrink"] { --sky: radial-gradient(ellipse at 50% 35%, #8a3a4a 0%, #45182a 55%, #1a0812 100%); }
+body[data-rule="rain"] { --sky: radial-gradient(ellipse at 50% 35%, #3a6a80 0%, #1b3446 55%, #0a141c 100%); }
+body[data-rule="lowgrav"] { --sky: radial-gradient(ellipse at 50% 30%, #4a3a8a 0%, #1c1446 50%, #06040f 100%); }
+body[data-rule="spin"] { --sky: radial-gradient(ellipse at 50% 35%, #b07a2a 0%, #5a3414 55%, #1c0f08 100%); }
+body[data-rule="big"] { --sky: radial-gradient(ellipse at 50% 35%, #4a8a4a 0%, #1f4a2a 55%, #0a1a10 100%); }
+body[data-rule="bounce"] { --sky: radial-gradient(ellipse at 50% 35%, #a04a8a 0%, #4a1f4a 55%, #1a0a1c 100%); }
