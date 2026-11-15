@@ -71,6 +71,28 @@ const Hg = {
   top: new THREE.CylinderGeometry(0.27, 0.27, 0.42, 20),
   topBrim: new THREE.CylinderGeometry(0.44, 0.44, 0.04, 24),
   frog: new THREE.SphereGeometry(0.12, 12, 10),
+  wizBrim: new THREE.CylinderGeometry(0.52, 0.52, 0.045, 24),
+  wizCone: new THREE.ConeGeometry(0.3, 0.8, 20),
+  wizBand: new THREE.CylinderGeometry(0.262, 0.305, 0.1, 20),
+  spot: new THREE.SphereGeometry(0.1, 12, 8),
+  beanie: new THREE.SphereGeometry(0.545, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.42),
+  blade: new THREE.BoxGeometry(0.34, 0.025, 0.11),
+  uniHorn: new THREE.ConeGeometry(0.085, 0.55, 12),
+  uniRing: new THREE.TorusGeometry(0.09, 0.03, 8, 16),
+  chickBody: new THREE.SphereGeometry(0.2, 16, 12),
+  chickHead: new THREE.SphereGeometry(0.14, 16, 12),
+  beak: new THREE.ConeGeometry(0.05, 0.11, 8),
+  star: (() => { // 별 모양 (앞뒤로 살짝 두꺼움)
+    const sh = new THREE.Shape();
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2 + Math.PI / 2, r = i % 2 ? 0.1 : 0.23;
+      sh[i ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r);
+    }
+    sh.closePath();
+    const g = new THREE.ExtrudeGeometry(sh, { depth: 0.07, bevelEnabled: false });
+    g.translate(0, 0, -0.035);
+    return g;
+  })(),
 };
 const at = (m, x, y, z, rx = 0, ry = 0, rz = 0) => { m.position.set(x, y, z); m.rotation.set(rx, ry, rz); return m; };
 
@@ -115,6 +137,60 @@ export const HATS = [
     pupil.scale.setScalar(0.6);
     return [eye, pupil];
   }) },
+  { icon: '🧙', name: '마법사 모자', build: () => [
+    at(part(Hg.wizBrim, HAT_MAT.purple, 1.05), 0, 0.45, 0, 0, 0, 0.1),
+    at(part(Hg.wizCone, HAT_MAT.purple, 1.05), -0.06, 0.86, 0, 0, 0, 0.14),
+    at(part(Hg.wizBand, HAT_MAT.gold, 0), -0.015, 0.52, 0, 0, 0, 0.12),
+  ] },
+  { icon: '🍄', name: '버섯', build: () => {
+    const cap = at(part(Hg.cap, HAT_MAT.red, 1.03), 0, 0.2, 0);
+    cap.scale.set(1.22, 0.86, 1.22);
+    const spots = [[0, 1.25, 1], [0.9, 0.55, 0.8], [2.6, 0.6, 0.9], [4.3, 0.5, 0.85], [5.4, 0.9, 0.7], [1.9, 1.0, 0.6], [3.5, 1.05, 0.7]].map(([a, e, sc]) => {
+      const m = new THREE.Mesh(Hg.spot, HAT_MAT.white);
+      const r = 0.55 * 1.22 * Math.cos(e);
+      m.position.set(Math.cos(a) * r, 0.2 + Math.sin(e) * 0.55 * 0.86, Math.sin(a) * r);
+      m.scale.set(sc, sc * 0.45, sc);
+      m.lookAt(0, 0.2 - 0.6, 0); m.rotateX(Math.PI / 2); // 갓 표면에 납작하게 붙음
+      return m;
+    });
+    return [cap, ...spots];
+  } },
+  { icon: '🚁', name: '프로펠러 모자', build: () => {
+    const prop = new THREE.Group(); // 계속 도는 날개 (Character.update)
+    prop.userData.spin = 14;
+    prop.position.set(0, 0.86, 0);
+    for (const [i, mat] of [HAT_MAT.red, HAT_MAT.gold].entries()) {
+      for (const s of [-1, 1]) {
+        const b = part(Hg.blade, mat, 1.12);
+        b.position.set(i ? 0 : s * 0.2, 0, i ? s * 0.2 : 0);
+        b.rotation.set(i ? 0 : s * 0.25, i ? Math.PI / 2 : 0, i ? s * 0.25 : 0);
+        prop.add(b);
+      }
+    }
+    return [
+      at(part(Hg.beanie, HAT_MAT.blue, 1.03), 0, 0.04, 0),
+      at(part(Hg.stem, HAT_MAT.ink, 0), 0, 0.72, 0),
+      at(part(Hg.knot, HAT_MAT.red, 1.1), 0, 0.86, 0),
+      prop,
+    ];
+  } },
+  { icon: '🦄', name: '유니콘 뿔', build: () => [
+    at(part(Hg.uniHorn, HAT_MAT.pink, 1.08), 0.27, 0.68, 0, 0, 0, -0.5),
+    at(part(Hg.uniRing, HAT_MAT.gold, 0), 0.19, 0.5, 0, Math.PI / 2, -0.5, 0),
+    ...[-1, 1].map(s => at(part(Hg.catEar, HAT_MAT.white, 1.08), -0.02, 0.52, s * 0.3, s * 0.5, Math.PI / 4, 0)),
+  ] },
+  { icon: '🐥', name: '병아리', build: () => {
+    const eye = s => { const e = new THREE.Mesh(Hg.knot, INK); e.scale.setScalar(0.32); return at(e, 0.25, 0.9, s * 0.06); };
+    const wing = s => { const w = part(Hg.leaf, HAT_MAT.gold, 1.08); w.scale.set(0.9, 0.55, 0.3); return at(w, -0.04, 0.68, s * 0.19, 0, 0, -0.3); };
+    return [
+      at(part(Hg.chickBody, HAT_MAT.gold, 1.07), -0.02, 0.68, 0),
+      at(part(Hg.chickHead, HAT_MAT.gold, 1.08), 0.13, 0.87, 0),
+      at(part(Hg.beak, HAT_MAT.orange, 1.1), 0.29, 0.85, 0, 0, 0, -Math.PI / 2),
+      eye(-1), eye(1), wing(-1), wing(1),
+    ];
+  } },
+  // 별 두 장을 십자로 겹쳐서 어느 쪽에서 봐도 별로 보임
+  { icon: '🌟', name: '신화의 별', float: true, spin: 2.2, build: () => [0, Math.PI / 2].map(ry => at(part(Hg.star, HAT_MAT.gold, 1.14), 0, 1.0, 0, 0, ry, 0)) },
 ];
 
 export class Character {
@@ -229,8 +305,10 @@ export class Character {
     if (this.hatId === n) return;
     this.hatId = n;
     this.hat.clear();
+    this.hat.rotation.y = 0;
     const parts = HATS[n].build();
     if (parts.length) this.hat.add(...parts);
+    this.hatSpin = parts.filter(p => p.userData.spin); // 스스로 도는 조각 (프로펠러)
   }
 
   setFace(name) {
@@ -336,7 +414,10 @@ export class Character {
     this.rig.position.y = bob;
     this.rig.scale.set(squash, 1 / squash, 1);
     this.head.rotation.x = s.stunned ? Math.sin(t * 6) * 0.15 : headTilt;
-    if (HATS[this.hatId].float) this.hat.position.y = Math.sin(t * 3) * 0.04; // 천사 링 둥실
+    const hatDef = HATS[this.hatId];
+    this.hat.position.y = hatDef.float ? Math.sin(t * 3) * 0.04 : 0; // 천사 링 · 신화의 별 둥실
+    if (hatDef.spin) this.hat.rotation.y += dt * hatDef.spin;         // 통째로 도는 모자
+    for (const m of this.hatSpin ?? []) m.rotation.y += dt * m.userData.spin * (s.speed > 0.6 ? 2 : 1); // 달리면 더 빨리
 
     this.stars.visible = !!s.stunned;
     if (s.stunned) {

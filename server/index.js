@@ -179,7 +179,10 @@ wss.on('connection', socket => {
     const id = conn.id;
     if (msg.t === 'input') room.setInput(id, msg);
     else if (msg.t === 'pick') room.pick(id, msg.id, msg.slot);
-    else if (msg.t === 'restart') restart(conn);
+    else if (msg.t === 'restart') {
+      if (msg.level !== undefined) { conn.level = msg.level; conn.title = msg.title; } // 방금 오른 레벨 · 바꾼 칭호
+      restart(conn);
+    }
     else if (msg.t === 'start') room.requestStart(id);
     else if (msg.t === 'bots') room.setBots(id, msg.on);
     else if (msg.t === 'botLevel') room.setBotLevel(id, msg.n);

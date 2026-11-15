@@ -99,6 +99,22 @@ const SFX = {
   quake: v => { tone(60, 0.9, { type: 'sawtooth', vol: 0.35 * v, slide: 0.7 }); noise(0.6, { vol: 0.45 * v, from: 300, to: 80, q: 0.7 }); },
   sneeze: v => { noise(0.12, { vol: 0.25 * v, from: 2000, to: 4000, q: 2 }); noise(0.25, { vol: 0.5 * v, from: 3000, to: 900, delay: 0.14 }); },
   flag: v => tone(1320, 0.12, { type: 'triangle', vol: 0.2 * v, slide: 1.3 }),
+  // 내 밀치기가 맞음: 묵직하게 '퍽' (세게 맞히면 더 낮고 크게)
+  smack: () => { tone(220, 0.12, { type: 'square', vol: 0.22, slide: 0.35 }); noise(0.07, { vol: 0.55, from: 1800, to: 300, q: 0.8 }); },
+  smackBig: () => { tone(160, 0.22, { type: 'square', vol: 0.3, slide: 0.3 }); tone(70, 0.3, { type: 'sine', vol: 0.7, slide: 0.5 }); noise(0.14, { vol: 0.7, from: 2400, to: 200, q: 0.7 }); },
+  // KO: 올라가는 두 음 + 반짝
+  ko: () => { [659, 988].forEach((f, i) => tone(f, 0.16, { type: 'square', vol: 0.2, delay: i * 0.08 })); tone(1319, 0.35, { type: 'triangle', vol: 0.3, delay: 0.16 }); noise(0.2, { vol: 0.2, from: 5000, to: 9000, q: 2, delay: 0.16 }); },
+  multi: () => { [659, 831, 988, 1319, 1661].forEach((f, i) => tone(f, 0.16, { type: 'square', vol: 0.2, delay: i * 0.065 })); [988, 1319, 1976].forEach(f => tone(f, 0.6, { type: 'triangle', vol: 0.22, delay: 0.34 })); noise(0.4, { vol: 0.25, from: 5000, to: 10000, q: 2, delay: 0.3 }); },
+  // 완전히 떨어짐: '뽁'
+  pop: v => { tone(300, 0.14, { type: 'sine', vol: 0.5 * v, slide: 3 }); noise(0.1, { vol: 0.25 * v, from: 1500, to: 5000, q: 1.5, delay: 0.05 }); },
+  // 결정타 슬로모션: 낮게 가라앉는 울림
+  slowmo: () => { tone(110, 1.1, { type: 'sine', vol: 0.6, slide: 0.4 }); tone(440, 0.9, { type: 'triangle', vol: 0.12, slide: 0.5 }); },
+  // 서든데스 경보
+  alarm: () => [0, 0.22, 0.44].forEach(d => { tone(880, 0.16, { type: 'sawtooth', vol: 0.16, delay: d, slide: 0.75 }); }),
+  matchpoint: () => [784, 784, 1047].forEach((f, i) => tone(f, i === 2 ? 0.4 : 0.1, { type: 'square', vol: 0.14, delay: i * 0.13 })),
+  // 성장: 레벨업, 새로 열림
+  levelup: () => { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.2, { type: 'triangle', vol: 0.3, delay: i * 0.07 })); noise(0.4, { vol: 0.15, from: 6000, to: 10000, q: 2, delay: 0.3 }); },
+  unlock: () => { [1047, 1319, 1568, 2093].forEach((f, i) => tone(f, 0.25, { type: 'sine', vol: 0.22, delay: i * 0.09 })); },
   // 시상대 팡파르
   fanfare: () => {
     [[523, 0], [523, 0.12], [523, 0.24], [659, 0.36], [784, 0.6], [659, 0.78], [784, 0.9]].forEach(([f, d]) => tone(f, 0.2, { type: 'square', vol: 0.12, delay: d }));

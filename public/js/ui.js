@@ -1,4 +1,5 @@
 // 화면 UI: 표지, 능력 카드, HUD, 이름표
+import { TITLES } from './progress.js';
 
 // 카드 아이콘 (서버 카드 id 기준, 화면 표현만 담당)
 export const ICONS = {
@@ -19,6 +20,9 @@ const SKILL_CARD = { dash: 'dash', shield: 'shield', shockwave: 'shockwave', swa
 const KIND_NAME = { stat: '스탯', skill: '스킬', rule: '규칙', trade: '트레이드오프' };
 const RARITY_NAME = { common: '일반', rare: '희귀', legend: '전설', mythic: '신화' };
 const icon = id => ICONS[id] ?? '✨';
+export const cardIcon = icon;
+export { RARITY_NAME, KIND_NAME };
+const titleName = n => TITLES[n]?.name ?? '';
 
 // 감정 이모티콘 / 도발 (서버는 번호만 안다. 순서를 바꾸면 안 됨 — 서버 EMOTE_COUNT와 개수 맞춤)
 // face = 캐릭터 표정, gesture = 몸동작 (character.js)
@@ -104,23 +108,40 @@ const $ = id => document.getElementById(id);
 let hat = 0;
 try { hat = Number(localStorage.getItem('hat')) || 0; } catch {}
 export const getHat = () => hat;
-export function initHatPicker(hats, onChange) {
-  if (!hats[hat]) hat = 0;
+// locks: { unlocked(n), hint(n), isNew(n), seen() } — 잠긴 모자는 조건을 보여 주고 고를 수 없음 (js/meta.js)
+export function initHatPicker(hats, onChange, locks) {
+  if (!hats[hat] || !locks.unlocked(hat)) hat = 0;
   const box = $('hat-picker'), grid = box.querySelector('.hp-grid');
   const draw = () => {
-    grid.innerHTML = hats.map((h, n) => `<button data-n="${n}" class="${n === hat ? 'on' : ''}">
-      <span class="ep-icon">${h.icon}</span><span class="ep-text">${h.name}</span></button>`).join('');
+    grid.innerHTML = hats.map((h, n) => {
+      const open = locks.unlocked(n);
+      return `<button data-n="${n}" class="${n === hat ? 'on' : ''} ${open ? '' : 'locked'}" ${open ? '' : `title="${locks.hint(n)} 달성하면 열려요"`}>
+      <span class="ep-icon">${h.icon}</span><span class="ep-text">${open ? h.name : '🔒 ' + locks.short(n)}</span>
+      ${open && locks.isNew(n) ? '<b class="new-dot">NEW</b>' : ''}</button>`;
+    }).join('');
+    const openCount = hats.filter((_, n) => locks.unlocked(n)).length;
+    box.querySelector('.ep-sub').textContent = `눌러 보면 뒤에 있는 캐릭터가 바로 써 봐요 · ${openCount}/${hats.length}개 열림`;
   };
+  const hint = box.querySelector('.hp-hint');
   grid.onclick = e => {
     const b = e.target.closest('button');
     if (!b) return;
-    hat = Number(b.dataset.n);
+    const n = Number(b.dataset.n);
+    onChange(n); // 잠긴 모자도 써 볼 수는 있음 (갖고 싶게)
+    if (!locks.unlocked(n)) {
+      grid.querySelectorAll('.trying').forEach(x => x.classList.remove('trying'));
+      b.classList.add('trying');
+      hint.textContent = `🔒 ${hats[n].icon} ${hats[n].name} — ${locks.hint(n)} 달성하면 쓸 수 있어요 (지금은 미리 보기)`;
+      hint.hidden = false;
+      return;
+    }
+    hint.hidden = true;
+    hat = n;
     try { localStorage.setItem('hat', String(hat)); } catch {}
-    onChange(hat);
     draw();
   };
-  $('btn-hats').onclick = () => { draw(); box.hidden = false; $('title').classList.add('picking-hat'); };
-  box.querySelector('.ep-done').onclick = () => { box.hidden = true; $('title').classList.remove('picking-hat'); };
+  $('btn-hats').onclick = () => { draw(); hint.hidden = true; box.hidden = false; $('title').classList.add('picking-hat'); };
+  box.querySelector('.ep-done').onclick = () => { box.hidden = true; $('title').classList.remove('picking-hat'); onChange(hat); locks.seen(); };
   onChange(hat);
 }
 // 내용이 같으면 다시 그리지 않음 (폰에서 렉 줄이기)
@@ -133,11 +154,15 @@ export function setCatalog(list, win, cds) {
   skillCdMax = cds ?? {};
 }
 const skillName = skill => [...catalog.values()].find(a => a.skill === skill)?.name ?? skill;
+export const getWinScore = () => winScore;
 
 // ---------- 표지 ----------
 // mode: quick(빠른 시작) / create(방 만들기) / join(코드로 입장) / practice
 // 서버가 받아주면(welcome) enterGame(), 못 들어가면 titleError()
 let titleBusy = false;
+let botDiff = 1;
+try { const d = Number(localStorage.getItem('botDiff')); if (d >= 0 && d <= 2 && localStorage.getItem('botDiff') !== null) botDiff = d; } catch {}
+export const getBotDiff = () => botDiff;
 export function initTitle(onStart) {
   const input = $('nickname'), code = $('room-code');
   try { input.value = localStorage.getItem('nickname') ?? ''; } catch {}
@@ -154,6 +179,17 @@ export function initTitle(onStart) {
   $('create').onclick = () => start('create');
   $('join').onclick = () => start('join');
   $('practice').onclick = () => start('practice');
+  // 봇 난이도 (브라우저에 저장)
+  const seg = $('bot-diff');
+  const drawDiff = () => seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', Number(b.dataset.n) === botDiff));
+  seg.onclick = e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    botDiff = Number(b.dataset.n);
+    try { localStorage.setItem('botDiff', String(botDiff)); } catch {}
+    drawDiff();
+  };
+  drawDiff();
   code.oninput = () => { code.value = code.value.replace(/\D/g, '').slice(0, 4); };
   code.onkeydown = e => { if (e.key === 'Enter') start('join'); };
   input.onkeydown = e => { if (e.key === 'Enter') start('quick'); };
@@ -341,19 +377,55 @@ export function renderHud(s, myId) {
   const rule = RULES[s.rule];
   const showRule = rule && (s.phase === 'countdown' || s.phase === 'playing');
   $('rule').hidden = !showRule;
-  if (showRule) setHtml($('rule'), `<span class="rule-icon">${rule.icon}</span><b>${rule.text}</b><span>${rule.sub}</span>`);
+  $('rule').classList.toggle('sudden', showRule && s.sd > 0);
+  $('rule').classList.toggle('soon', showRule && !s.sd && s.sdIn !== null && s.sdIn <= 10);
+  if (showRule) {
+    const round = `<i class="rule-round">R${s.rn}</i>`;
+    if (s.sd > 0) setHtml($('rule'), `${round}<span class="rule-icon">💀</span><b>서든데스</b><span>바닥이 무너지고 밀치기 +${Math.round(s.sd * 12)}%</span>`);
+    else if (s.sdIn !== null && s.sdIn <= 10) setHtml($('rule'), `${round}<span class="rule-icon">${rule.icon}</span><b>${rule.text}</b><span>💀 서든데스까지 ${s.sdIn}초</span>`);
+    else setHtml($('rule'), `${round}<span class="rule-icon">${rule.icon}</span><b>${rule.text}</b><span>${rule.sub}</span>`);
+  }
 
   // 점수판: 내용이 바뀔 때만 다시 그림
   setHtml($('scoreboard'), s.players.filter(p => !p.cl).sort((a, b) => b.sc - a.sc).map(p => {
     const pips = Array.from({ length: winScore }, (_, i) => `<i class="${i < p.sc ? 'on' : ''}"></i>`).join('');
     const abil = p.ab.map(id => `<span title="${catalog.get(id)?.name ?? id}">${icon(id)}</span>`).join('');
-    return `<div class="row ${p.id === myId ? 'me' : ''} ${p.al ? '' : 'out'}">
+    return `<div class="row ${p.id === myId ? 'me' : ''} ${p.al ? '' : 'out'} ${p.sc === winScore - 1 ? 'mp' : ''}">
       <span class="dot" style="background:${p.color}"></span>
-      <span class="pname">${p.away ? '📶 ' : ''}${p.name}</span>
+      <span class="pname">${p.away ? '📶 ' : ''}${p.name}${p.kl ? `<small class="kos">💥${p.kl}</small>` : ''}</span>
       <span class="pips">${pips}</span>
       <span class="abil">${abil}</span>
     </div>`;
   }).join(''));
+}
+
+// ---------- 킬 피드 · 알림 ----------
+// 누가 누구를 떨어뜨렸는지 오른쪽 위에 잠깐 (최대 4줄)
+export function pushFeed(killer, victim, myId) {
+  const el = $('feed');
+  const name = p => `<b style="background:${p.color}">${p.name}</b>`;
+  const row = document.createElement('div');
+  row.className = `feed-row ${killer?.id === myId ? 'mine' : victim.id === myId ? 'me-out' : ''}`;
+  row.innerHTML = killer ? `${name(killer)}<span>💥</span>${name(victim)}` : `${name(victim)}<span>🕳️ 떨어짐</span>`;
+  el.appendChild(row);
+  while (el.children.length > 4) el.firstChild.remove();
+  setTimeout(() => row.classList.add('out'), 4200);
+  setTimeout(() => row.remove(), 4800);
+}
+export function clearFeed() { $('feed').innerHTML = ''; }
+
+// 화면 가운데 위 큰 알림. kind: ko / multi / bad / info / danger. pos: 'low'면 카운트다운 숫자 아래
+let bannerTimer = 0;
+export function banner(text, kind = 'info', sub = '', pos = '') {
+  const el = $('banner');
+  el.className = `${kind} ${pos}`;
+  el.querySelector('b').textContent = text;
+  el.querySelector('span').textContent = sub;
+  el.hidden = false;
+  void el.offsetWidth; // 애니메이션 재시작
+  el.classList.add('show');
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => { el.hidden = true; }, kind === 'info' ? 2600 : 1700);
 }
 
 // 내 상태 알림 (거울 세계에 걸림)
@@ -377,10 +449,12 @@ export function setConnecting(title, sub = '') {
 
 // ---------- 대기실 ----------
 // 방장(👑)만 시작, AI 켬/끔, 다른 사람 내보내기를 할 수 있음
-let startPressedAt = 0, botsOn = false;
-export function initLobby(onStart, onBots, onKick, onExit) {
+let startPressedAt = 0, botsOn = false, botLevel = 1;
+const BOT_LEVEL = ['쉬움', '보통', '어려움'];
+export function initLobby(onStart, onBots, onBotLevel, onKick, onExit) {
   $('btn-start').onclick = () => { onStart(); startPressedAt = performance.now(); };
   $('btn-bots').onclick = () => { onBots(!botsOn); $('btn-bots').blur(); };
+  $('btn-botlevel').onclick = () => { onBotLevel((botLevel + 1) % 3); $('btn-botlevel').blur(); };
   $('btn-lobby-exit').onclick = onExit;
   $('lobby').querySelector('.lobby-list').onclick = e => {
     const b = e.target.closest('.kick');
@@ -392,15 +466,19 @@ export function updateLobby(s, myId) {
   const el = $('lobby');
   el.hidden = s.phase !== 'waiting';
   if (el.hidden) { startPressedAt = 0; return; }
-  botsOn = s.bots;
+  botsOn = s.bots; botLevel = s.bl;
   const amHost = s.host === myId;
+  const lv = $('btn-botlevel');
+  lv.hidden = !s.bots;
+  lv.disabled = !amHost;
+  lv.textContent = `🤖 AI 난이도: ${BOT_LEVEL[s.bl] ?? '보통'}${amHost ? ' (눌러서 바꾸기)' : ''}`;
   const humans = s.players.filter(p => !p.bot);
   const canStart = s.bots || humans.length >= 2;
   setHtml(el.querySelector('.lobby-code'), s.kind === 'quick'
     ? `⚡ 빠른 시작 방 · 코드 <b>${s.code}</b>`
     : `방 코드 <b>${s.code}</b>`);
   setHtml(el.querySelector('.lobby-list'), humans.map(p =>
-    `<div class="lobby-row ${p.away ? 'away' : ''}"><span class="dot" style="background:${p.color}"></span>${p.name}${p.id === myId ? ' (나)' : ''}${p.away ? ' <small>📶 연결 끊김</small>' : ''}
+    `<div class="lobby-row ${p.away ? 'away' : ''}"><span class="dot" style="background:${p.color}"></span><i class="lv-chip">Lv ${p.lv}</i>${p.name}${p.id === myId ? ' (나)' : ''}${titleName(p.ti) ? ` <em class="title-chip">${titleName(p.ti)}</em>` : ''}${p.away ? ' <small>📶 연결 끊김</small>' : ''}
       ${p.id === s.host ? '<span class="crown" title="방장">👑</span>' : ''}
       ${amHost && p.id !== myId ? `<button class="kick" data-id="${p.id}" data-name="${p.name}">내보내기</button>` : ''}</div>`).join('')
     + Array.from({ length: Math.max(0, 4 - humans.length) }, () =>
@@ -446,10 +524,10 @@ export function updateResults(s, myId, showAfter) {
       <div class="result-row ${r.id === myId ? 'me' : ''} ${r.rank === 1 ? 'first' : ''}">
         <span class="r-rank">${MEDAL[r.rank - 1] ?? r.rank + '위'}</span>
         <span class="dot" style="background:${r.color}"></span>
-        <span class="r-name">${r.name}${r.id === myId ? ' (나)' : ''}</span>
+        <span class="r-name">${r.name}${r.id === myId ? ' (나)' : ''}${titleName(r.title) ? ` <em class="title-chip">${titleName(r.title)}</em>` : ''}</span>
         <span class="r-stat" title="이긴 라운드">🏁 ${r.score}</span>
         <span class="r-stat" title="떨어뜨린 수">💥 ${r.kills}</span>
-        <span class="r-abil">${r.ab.map(icon).join('')}</span>
+        <span class="r-sub"><span class="r-award" title="${r.aw.name}: ${r.aw.text}">${r.aw.icon} <b>${r.aw.name}</b> <small>${r.aw.text}</small></span><span class="r-abil">${r.ab.map(icon).join('')}</span></span>
       </div>`).join('');
   }
   $('btn-restart').textContent = $('btn-restart').disabled ? '새 방으로 가는 중…' : '다시 하기';

@@ -444,7 +444,7 @@ export class Room {
 
   // 떨어지기 시작한 순간: 최근에 민 사람에게 처치 기록 + KO 알림. 마지막 상대였다면 슬로모션
   onFall(p) {
-    if (p.clone) return; // 분신이 떨어진 것은 처치가 아님
+    if (p.clone || this.phase !== 'playing') return; // 분신이 떨어진 것, 라운드가 끝난 뒤 떨어진 것은 기록하지 않음
     p.stat.falls++;
     const k = this.players.get(p.lastHitBy);
     const killer = k && k !== p && !k.clone && this.time - p.lastHitTime < C.KO_CREDIT_TIME ? k : null;
@@ -459,7 +459,7 @@ export class Room {
       if (killer.bot && Math.random() < 0.6) this.emote(killer.id, [4, 5, 8, 7][Math.floor(Math.random() * 4)]);
     }
     const standing = [...this.players.values()].filter(o => o.alive && !o.clone && o.fallTimer === 0);
-    const fin = this.phase === 'playing' && standing.length <= 1;
+    const fin = standing.length <= 1;
     if (fin) this.slowmo = C.SLOWMO_TIME;
     this.event({ k: 'ko', id: p.id, by: killer?.id ?? null, n, fin, x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100 });
   }

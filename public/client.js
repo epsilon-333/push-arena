@@ -4,6 +4,8 @@ import * as UI from './js/ui.js';
 import { isTouch, initTouch } from './js/touch.js';
 import * as Sound from './js/audio.js';
 import { Podium } from './js/podium.js';
+import { Fx } from './js/fx.js';
+import * as Meta from './js/meta.js';
 
 // ---------- 씬 기본 구성 ----------
 // 폰은 가볍게: 안티앨리어싱 끔, 해상도·그림자 품질 낮춤
@@ -27,10 +29,11 @@ sun.shadow.camera.right = sun.shadow.camera.top = 20;
 sun.shadow.bias = -0.0005;
 scene.add(sun);
 
+const baseFov = () => (innerWidth < innerHeight ? 72 : 55); // 세로 화면이면 더 넓게
 function resize() {
   renderer.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight;
-  camera.fov = camera.aspect < 1 ? 72 : 55; // 세로 화면이면 더 넓게
+  camera.fov = baseFov();
   camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
@@ -41,6 +44,9 @@ const podium = new Podium(scene); // 최종 순위 시상대
 // 판 전체(타일 + 캐릭터)를 담는 그룹. 기울기는 이 그룹을 회전시킨다.
 const board = new THREE.Group();
 scene.add(board);
+const fx = new Fx(board, isTouch); // 파편 · 먼지 · 꽃가루
+
+let mode = 'title'; // title(표지) → game(방에 들어감)
 
 // ---------- 육각형 타일 ----------
 const SQRT3 = Math.sqrt(3);
@@ -111,11 +117,13 @@ function addTile(key, q, r, size) {
 
 function applyTiles(msg) {
   const seen = new Set();
+  const broke = []; // 이번에 사라진 타일 (조각이 튐)
   for (const [q, r, state] of msg.tiles) { // state: 0 사라짐, 1 정상, 2 무너지는 중, 3 균열
     const key = `${q},${r}`;
     seen.add(key);
     const mesh = tileMeshes.get(key) ?? addTile(key, q, r, msg.size);
     const d = mesh.userData;
+    if (state === 0 && d.state !== 0 && mesh.visible) broke.push(d.base);
     if (state === 1 && d.state !== 1) { // 다시 생김 / 새 라운드: 아래에서 올라옴
       mesh.position.set(d.base.x, d.base.y - 6, d.base.z);
       mesh.visible = true; d.fallV = 0; d.rising = true;
@@ -126,6 +134,11 @@ function applyTiles(msg) {
   }
   for (const [key, mesh] of tileMeshes) {
     if (!seen.has(key)) { board.remove(mesh); tileMeshes.delete(key); }
+  }
+  // 한꺼번에 많이 무너지면(축소, 서든데스) 타일마다 조각 수를 줄임
+  if (mode === 'game' && broke.length < 60) {
+    for (const b of broke) fx.debris(b.x, b.z, '#' + sideMat.color.getHexString(), broke.length > 10 ? 2 : 5);
+    if (broke.length) Sound.play('crack', Math.min(1, 0.4 + broke.length * 0.1));
   }
 }
 
@@ -169,11 +182,13 @@ const burstTex = (() => {
 })();
 const effects = [];
 
-function spawnBurst(pos, color = '#ffffff') {
+// size: 터지는 크기 배율 (세게 맞을수록 큼)
+function spawnBurst(pos, color = '#ffffff', size = 1) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: burstTex, color, transparent: true, depthWrite: false }));
   s.position.copy(pos);
+  s.material.rotation = Math.random() * Math.PI;
   board.add(s);
-  effects.push({ obj: s, life: 0, max: 0.3, update: (e, k) => { s.scale.setScalar(0.6 + k * 1.6); s.material.opacity = 1 - k; } });
+  effects.push({ obj: s, life: 0, max: 0.22 + size * 0.08, update: (e, k) => { s.scale.setScalar((0.6 + (1 - (1 - k) ** 3) * 1.8) * size); s.material.opacity = 1 - k * k; } });
 }
 
 // 자석 손: 나와 끌려온 상대 사이 빛줄기
@@ -388,9 +403,52 @@ function volAt(x, z) {
   return Math.max(0, 1 - d / 22);
 }
 
+// 맞음: 밀려나는 방향으로 파편이 튀고, 세게 맞을수록 크게. 내가 때렸거나 맞았으면 화면도 같이 움찔
+function playHit(e) {
+  const v = views.get(e.id);
+  if (!v) return;
+  const pos = v.char.root.position, sz = v.szNow || 1;
+  const big = Math.min(2.2, Math.max(0.7, e.p / 22)); // 보통 밀치기 ≈ 1
+  const color = v.state?.color ?? '#ffffff';
+  fx.sparks(pos.x, 1.0 * sz, pos.z, e.nx, e.nz, e.p, color);
+  spawnBurst(tmp.set(pos.x - e.nx * 0.4, 1.1 * sz, pos.z - e.nz * 0.4), v.state?.st ? '#ffd84a' : '#ffffff', big);
+  if (e.p > 34) fx.puffRing(pos.x, pos.z, 1.1, 8);
+  const mine = e.id === myId, byMe = e.by === myId && !mine;
+  if (mine || byMe) {
+    const power = (mine ? 1 : 0.55) * big;
+    shake = Math.max(shake, 0.16 * power);
+    // 밀려나는 방향으로 카메라가 툭 밀림 (판 좌표 → 화면에서는 거의 그대로)
+    camKick.x += e.nx * 0.55 * power; camKick.z += e.nz * 0.55 * power;
+    fovKick = Math.max(fovKick, (byMe ? 2.2 : 3.2) * big);
+  }
+  if (byMe) Sound.play(e.p > 34 ? 'smackBig' : 'smack', 1);
+}
+
+// 누가 떨어지기 시작함: 킬 피드, 내가 떨어뜨렸으면 KO 알림
+const KO_WORD = ['', 'KO!', '더블 KO!', '트리플 KO!', '올킬!!'];
+function playKo(e) {
+  const victim = latest?.players.find(p => p.id === e.id), killer = latest?.players.find(p => p.id === e.by);
+  if (!victim) return;
+  UI.pushFeed(killer, victim, myId);
+  fx.burst(e.x, 0.8, e.z, victim.color, 16, 10);
+  if (e.by === myId) {
+    const n = Math.min(4, Math.max(1, e.n));
+    UI.banner(KO_WORD[n], n >= 2 ? 'multi' : 'ko', `${victim.name} 떨어뜨림`);
+    Sound.play(n >= 2 ? 'multi' : 'ko', 1);
+    fovKick = Math.max(fovKick, 5 + n * 2);
+    shake = Math.max(shake, 0.25);
+  } else if (e.id === myId) {
+    UI.banner('으악!', 'bad', killer ? `${killer.name}에게 밀려 떨어짐` : '발을 헛디뎠어요');
+  }
+  if (e.fin) { slowFocus = { x: e.x, z: e.z }; Sound.play('slowmo', 1); }
+}
+
 function playEvents(events) {
   for (const e of events ?? []) {
-    if (e.k === 'ring') { spawnRing(e.x, e.z, e.r); Sound.play('boom', volAt(e.x, e.z)); }
+    if (e.k === 'hit') playHit(e);
+    else if (e.k === 'ko') playKo(e);
+    else if (e.k === 'sudden') { UI.banner('서든데스!', 'danger', '바닥이 무너지고 밀치기가 세져요'); Sound.play('alarm', 1); shake = Math.max(shake, 0.4); }
+    else if (e.k === 'ring') { spawnRing(e.x, e.z, e.r); fx.puffRing(e.x, e.z, e.r * 0.5, 14); Sound.play('boom', volAt(e.x, e.z)); }
     else if (e.k === 'dash') Sound.play('whoosh', e.id === myId ? 1 : 0.5);
     else if (e.k === 'slip') { // 바나나 밟음
       Sound.play('slip', e.id === myId ? 1 : volAt(e.x, e.z));
@@ -430,7 +488,9 @@ function playEvents(events) {
     else if (e.k === 'meteor') { // 운석 착탄
       Sound.play('boom', volAt(e.x, e.z));
       spawnRing(e.x, e.z, e.r, '#ff9f43');
-      spawnBurst(tmp.set(e.x, 0.8, e.z), '#ff7a3a');
+      spawnBurst(tmp.set(e.x, 0.8, e.z), '#ff7a3a', 2);
+      fx.burst(e.x, 0.6, e.z, '#ff9f43', 18, 11);
+      fx.puffRing(e.x, e.z, e.r * 0.6, 12);
       shake = Math.max(shake, 0.35);
     }
     else if (e.k === 'phoenix') { // 불사조 부활: 떨어진 자리와 부활한 자리에 불꽃
@@ -461,6 +521,9 @@ function playEvents(events) {
 }
 
 let shake = 0;
+const camKick = { x: 0, z: 0 }; // 맞은 방향으로 카메라가 잠깐 밀림
+let fovKick = 0;                // 세게 때리거나 맞으면 화면이 잠깐 당겨짐
+let slowFocus = null;           // 결정타 슬로모션 동안 카메라가 바라볼 자리
 
 // ---------- 플레이어 ----------
 const views = new Map(); // id -> { char, label, state, ... }
@@ -482,7 +545,7 @@ function createView(p) {
   ghost.scale.set(0.9, 1.15, 0.9);
   ghost.visible = false;
   char.root.add(ghost);
-  return { char, shield, ghost, dashPuff: 0, label: UI.createLabel(), target: { x: p.x, z: p.z }, prev: { x: p.x, z: p.z }, speed: 0, atk: p.atk, hit: p.hit };
+  return { char, shield, ghost, dashPuff: 0, stepPuff: 0, label: UI.createLabel(), target: { x: p.x, z: p.z }, prev: { x: p.x, z: p.z }, speed: 0, atk: p.atk, hit: p.hit };
 }
 
 function removeView(id) {
@@ -535,6 +598,7 @@ function connect(hello) {
       saveToken(msg.token);
       resumeUntil = 0;
       UI.setCatalog(msg.abilities, msg.winScore, msg.skillCd);
+      Meta.setCatalog(msg.abilities);
       UI.setConnecting(null);
     }
     else if (msg.t === 'joinFail') {
@@ -580,6 +644,10 @@ function resetWorld() {
   myId = null; latest = null; pred = null; inputHistory.length = 0;
   syncOrbs([]); syncIce([]); syncBananas([]); syncMines([]); syncZones([]); syncMeteors([]);
   tiltTarget.x = tiltTarget.z = 0;
+  slowFocus = null;
+  document.body.classList.remove('slowmo', 'sudden');
+  UI.clearFeed();
+  Meta.resetMatch();
 }
 
 function applyState(s) {
@@ -594,7 +662,14 @@ function applyState(s) {
     // 내 소리는 크게, 다른 사람 소리는 거리에 따라 작게 (봇이 많으면 소리가 겹치므로)
     const isMe = p.id === myId, vol = isMe ? 1 : volAt(p.x, p.z);
     if (p.atk !== v.atk) { v.atk = p.atk; v.char.playPush(); v.pushQueued = p.rg; Sound.play('push', isMe ? 1 : vol * 0.35); }
-    if (p.hit !== v.hit) { v.hit = p.hit; v.char.playHit(); v.hitQueued = true; Sound.play('hit', isMe ? 1 : vol * 0.6); }
+    if (p.hit !== v.hit) { v.hit = p.hit; v.char.playHit(); Sound.play('hit', isMe ? 1 : vol * 0.6); }
+    // 완전히 떨어짐: 구멍에서 그 사람 색 꽃가루가 솟음
+    if (v.state?.al && !p.al && v.state.fall > 0 && s.phase !== 'countdown') {
+      fx.confetti(v.char.root.position.x, -1.5, v.char.root.position.z, 26, 13, p.color);
+      Sound.play('pop', isMe ? 1 : Math.max(0.4, vol));
+    }
+    // 착지 (점프, 내려찍기, 튀는 바닥)
+    if (v.state?.air > 0 && !(p.air > 0) && p.al && !(p.fall > 0)) fx.puffRing(p.x, p.z, 0.9, 8);
     if (p.st && !v.state?.st) Sound.play('stun', isMe ? 1 : vol * 0.5);
     if (p.fall > 0 && !(v.state?.fall > 0)) Sound.play('fall', isMe ? 1 : vol * 0.6);
     if (p.em >= 0 && v.state?.em !== p.em) Sound.play('emote', isMe ? 1 : vol * 0.6);
@@ -608,6 +683,10 @@ function applyState(s) {
   // 라운드 시작하면 카메라를 내 캐릭터 정면 방향으로
   const me = s.players.find(p => p.id === myId);
   if (me && s.phase === 'countdown' && latestPhase !== 'countdown') camYaw = me.f;
+  if (s.phase !== latestPhase) onPhase(s, me);
+  if (s.ts === 1) slowFocus = null;
+  document.body.classList.toggle('slowmo', s.ts < 1);
+  document.body.classList.toggle('sudden', s.sd > 0 && s.phase === 'playing');
   playPhaseSounds(s, me);
   latestPhase = s.phase;
   syncOrbs(s.orbs);
@@ -627,7 +706,7 @@ function applyState(s) {
   // 순위 화면이 뜨는 순간 카메라를 시상대로 (순위 화면이 닫히면 맵으로)
   const showPodium = s.phase === 'gameOver' && s.results && performance.now() > resultsAt;
   if (showPodium) {
-    if (!podium.visible) { podium.show(s.results); podiumCam(true); Sound.play('fanfare'); }
+    if (!podium.visible) { podium.show(s.results); podiumCam(true); Sound.play('fanfare'); Meta.onGameOver(s, myId); }
     else podium.show(s.results);
   } else if (podium.visible) podium.hide();
   document.getElementById('labels').hidden = podium.visible;
@@ -635,6 +714,22 @@ function applyState(s) {
   UI.updateLobby(s, myId);
 }
 let latestPhase = null, prevPhase = null, resultsAt = 0, lastCount = 0;
+
+// 단계가 바뀌는 순간의 연출
+function onPhase(s, me) {
+  if (s.phase === 'countdown') {
+    // 누군가 한 점만 더 따면 우승
+    const top = s.players.filter(p => !p.cl && p.sc === UI.getWinScore() - 1);
+    if (top.length) { UI.banner('매치 포인트!', 'info', top.map(p => p.name).join(' · ') + ' — 한 판만 더 이기면 우승'); Sound.play('matchpoint', 1); }
+  }
+  if (s.phase === 'roundEnd' || s.phase === 'gameOver') {
+    // 라운드 승자 머리 위로 꽃가루
+    for (const p of s.players) {
+      if (!p.al || p.cl || p.fall > 0) continue;
+      fx.confetti(p.x, 2.2, p.z, s.phase === 'gameOver' ? 60 : 34, 9, p.color);
+    }
+  }
+}
 
 // 카운트다운 삑, 시작, 라운드/게임 승패
 function playPhaseSounds(s, me) {
@@ -651,11 +746,12 @@ function playPhaseSounds(s, me) {
 UI.initLobby(
   () => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'start' })),
   on => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'bots', on })),
+  n => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'botLevel', n })),
   id => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'kick', id })),
   () => backToTitle(),
 );
 UI.initResults(
-  () => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'restart' })), // 바로 새 방으로
+  () => ws?.readyState === 1 && ws.send(JSON.stringify({ t: 'restart', ...Meta.helloInfo() })), // 바로 새 방으로 (방금 오른 레벨 · 칭호도 같이)
   () => backToTitle(), // 처음 화면으로
 );
 // 게임 도중 나가기
@@ -725,7 +821,7 @@ let pred = null, inputSeq = 0;
 const inputHistory = [];
 
 function canPredict(me) {
-  return physics && me && latest.phase === 'playing' && me.al && me.fall === 0 && me.ctl;
+  return physics && me && latest.phase === 'playing' && latest.ts === 1 && me.al && me.fall === 0 && me.ctl; // 슬로모션 중에는 서버 위치를 그대로 따름
 }
 
 function stepPred(st, ix, iz, me, dt) {
@@ -792,16 +888,16 @@ function sendInput() {
 }
 
 // ---------- 표지 화면 ----------
-let mode = 'title';
 const demo = new Character('#3f6fd8');
 board.add(demo.root);
-UI.initHatPicker(HATS, n => demo.setHat(n));
+Meta.init({ hats: HATS, sound: Sound });
+UI.initHatPicker(HATS, n => demo.setHat(n), Meta.hatLocks);
 let demoTimer = 0;
 const hatPicker = document.getElementById('hat-picker');
 
 UI.initTitle((name, gameMode, code) => {
   Sound.unlock(); // 버튼을 누른 순간에만 소리를 켤 수 있음
-  connect({ name, mode: gameMode, code, hat: UI.getHat() });
+  connect({ name, mode: gameMode, code, hat: UI.getHat(), diff: UI.getBotDiff(), ...Meta.helloInfo() });
 });
 // 게임 중에 페이지가 새로고침됐으면(폰이 탭을 다시 불러옴) 원래 방으로 돌아가 봄
 if (loadToken()) connect({ mode: 'resume', token: loadToken() });
@@ -820,10 +916,17 @@ function podiumCam(snap) {
   else { camera.position.lerp(camGoal, 0.1); camLook.lerp(lookGoal, 0.1); }
 }
 
+// 디버그: localhost 또는 주소에 ?debug 가 있을 때만 콘솔에서 window.__game 으로 상태를 볼 수 있음
+if (location.hostname === 'localhost' || location.search.includes('debug')) {
+  window.__game = { get state() { return latest; }, get myId() { return myId; }, views, fx, camera, Meta, UI,
+    press: (o = {}) => { if (o.attack) attackQueued = true; if (o.skill >= 0) skillQueued = o.skill; if (o.yaw !== undefined) camYaw = o.yaw; } };
+}
+
 // ---------- 렌더 루프 ----------
 const tmp = new THREE.Vector3();
 const camLook = new THREE.Vector3();
-const camGoal = new THREE.Vector3(), lookGoal = new THREE.Vector3();
+const camGoal = new THREE.Vector3(), lookGoal = new THREE.Vector3(), camOff = new THREE.Vector3();
+let fovNow = baseFov();
 let last = performance.now();
 
 function frame(now) {
@@ -871,15 +974,28 @@ function frame(now) {
       // 탈락/대기 중: 맵 전체 보기
       camGoal.copy(GAME_CAM.pos); lookGoal.copy(GAME_CAM.look);
     }
+    // 결정타 슬로모션: 떨어지는 사람 쪽을 바라봄 (구경 중이면 가까이 다가감)
+    if (slowFocus) {
+      const f = board.localToWorld(tmp.set(slowFocus.x, 0.6, slowFocus.z));
+      if (me?.state?.al && me.state.fall === 0) lookGoal.lerp(f, 0.65);
+      else { lookGoal.copy(f); camGoal.set(f.x * 0.55, 10, f.z * 0.55 + 12); }
+    }
     camera.position.lerp(camGoal, k);
     camLook.lerp(lookGoal, k);
   }
-  if (shake > 0) {
-    shake = Math.max(0, shake - dt);
-    camera.position.x += (Math.random() - 0.5) * shake * 0.6;
-    camera.position.y += (Math.random() - 0.5) * shake * 0.6;
-  }
+  // 맞은 방향으로 툭 밀렸다가 돌아옴 (실제 위치는 그대로 두고 그릴 때만 더함)
+  const kickDecay = Math.exp(-dt * 11);
+  camKick.x *= kickDecay; camKick.z *= kickDecay;
+  fovKick *= Math.exp(-dt * 7);
+  const shakeX = (Math.random() - 0.5) * shake * 0.6, shakeY = (Math.random() - 0.5) * shake * 0.6;
+  shake = Math.max(0, shake - dt);
+  camOff.set(camKick.x + shakeX, shakeY, camKick.z);
+  camera.position.add(camOff);
   camera.lookAt(camLook);
+  // 화면 당김: 세게 때리면 잠깐 넓어지고, 슬로모션 동안은 좁혀서 다가감
+  const fovGoal = baseFov() - (latest?.ts < 1 ? 9 : 0) + fovKick;
+  fovNow += (fovGoal - fovNow) * (1 - Math.exp(-dt * 9));
+  if (Math.abs(camera.fov - fovNow) > 0.02) { camera.fov = fovNow; camera.updateProjectionMatrix(); }
 
   // 판 기울기: tilt 방향이 내려가도록 회전
   const kt = 1 - Math.exp(-dt * 10);
@@ -959,9 +1075,16 @@ function frame(now) {
     if (p.gh || p.cl || p.fz) { v.ghost.material.opacity = 0.25 + Math.sin(t * 12) * 0.1; v.ghost.material.color.set(p.fz ? '#bfe8ff' : p.cl ? '#8fe9ff' : '#eef6ff'); }
     v.char.rig.rotation.y = p.sl ? t * 16 : 0; // 바나나: 빙글빙글
     if (p.sh || p.ph) v.shield.material.opacity = 0.22 + Math.sin(t * 8) * 0.08;
-    if (p.dash) { // 돌진 흔적
+    // 돌진 · 세게 밀려 날아가는 중: 먼지와 바람 줄기가 뒤로 남음
+    const flySp = Math.hypot(p.vx, p.vz);
+    if ((p.dash || flySp > 13) && p.fall === 0) {
       v.dashPuff -= dt;
-      if (v.dashPuff <= 0) { spawnBurst(tmp.set(root.position.x, 0.4, root.position.z), '#dfe8ff'); v.dashPuff = 0.04; }
+      if (v.dashPuff <= 0) {
+        v.dashPuff = 0.045;
+        const dx = p.vx / (flySp || 1), dz = p.vz / (flySp || 1);
+        fx.puff(root.position.x, 0.25, root.position.z, 1, 0.8, 0.34 * (v.szNow || 1), 0.8);
+        fx.streak(root.position.x, 1.0 * (v.szNow || 1), root.position.z, dx, dz, p.dash ? '#ffffff' : p.color);
+      }
     }
     // 방향 전환도 부드럽게
     let dr = -(mine ? pred.f : p.f) - root.rotation.y;
@@ -972,15 +1095,16 @@ function frame(now) {
     v.speed += (sp - v.speed) * 0.3;
     v.prev.x = root.position.x; v.prev.z = root.position.z;
 
+    // 달릴 때 발먼지 (걸음에 맞춰 조금씩)
+    if (v.speed > 5.5 && p.fall === 0 && !(p.air > 0) && !p.st) {
+      v.stepPuff -= dt;
+      if (v.stepPuff <= 0) { v.stepPuff = 0.2; fx.puff(root.position.x, 0.12, root.position.z, 1, 0.5, 0.16 * (v.szNow || 1), 0.5); }
+    }
+
     v.char.update(dt, t, { speed: v.speed, stunned: p.st, falling: p.fall > 0, winner: winnerPhase && p.al, emoteFace: UI.EMOTES[p.em]?.face, gesture: UI.EMOTES[p.em]?.gesture });
     root.visible = !((p.im || p.gh) && Math.floor(t * 12) % 2 === 0) || p.fall > 0; // 면역·유령 중 깜빡임
 
     if (v.pushQueued) { spawnPushWave(root, v.pushQueued); v.pushQueued = 0; }
-    if (v.hitQueued) {
-      spawnBurst(tmp.set(root.position.x, 1.1, root.position.z), p.st ? '#ffd84a' : '#ffffff');
-      if (p.id === myId) shake = 0.25;
-      v.hitQueued = false;
-    }
 
     // 이름/체력바를 화면 좌표로
     tmp.set(root.position.x, root.position.y + 2.35 * (v.szNow || 1), root.position.z);
@@ -988,7 +1112,9 @@ function frame(now) {
     UI.updateLabel(v.label, p, p.id === myId, (tmp.x * 0.5 + 0.5) * innerWidth, (-tmp.y * 0.5 + 0.5) * innerHeight);
   }
 
+  fx.update(dt);
   renderer.render(scene, camera);
+  camera.position.sub(camOff); // 흔들림은 다음 프레임 계산에 섞이지 않게 되돌림
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
