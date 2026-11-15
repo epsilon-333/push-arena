@@ -116,6 +116,9 @@ export const CONFIG = {
   SLOWMO_TIME: 0.9,       // 결정타(마지막 상대가 떨어지기 시작) 슬로모션 길이 (실제 시간, 초)
   SLOWMO_SCALE: 0.3,      // 슬로모션 동안 게임 속도
 
+  // 탈락자 유령: 떨어진 사람은 판 위를 떠다니며 가끔 작은 바람으로 훼방 (사람만, 봇은 안 함)
+  SPECTRE_SPEED: 7, SPECTRE_CD: 5, SPECTRE_RADIUS: 2, SPECTRE_POWER: 0.55,
+
   COUNTDOWN_TIME: 3,
   ROUND_END_TIME: 3,
   FALL_TIME: 1,           // 판 밖으로 나간 뒤 탈락 처리까지

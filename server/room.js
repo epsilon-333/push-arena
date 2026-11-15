@@ -277,6 +277,7 @@ export class Room {
     this.timer = C.COUNTDOWN_TIME;
     this.round++;
     this.slowmo = 0;
+    for (const p of this.players.values()) p.spectre = null;
     this.roundTime = 0;                  // 이번 라운드가 시작된 뒤 흐른 시간
     this.sudden = { steps: 0, t: 0 };    // 서든데스: 무너진 겹 수 / 다음 겹까지
     this.rule = C.MAP_RULES[Math.floor(Math.random() * C.MAP_RULES.length)];
@@ -673,6 +674,8 @@ export class Room {
       }
     }
 
+    if (canAct) this.updateSpectres(dt);
+
     // 위치 갱신
     for (const p of list) {
       p.x += p.vx * dt;
@@ -685,7 +688,10 @@ export class Room {
     for (const p of list) {
       if (p.fallTimer > 0) {
         p.fallTimer += dt;
-        if (p.fallTimer >= C.FALL_TIME) p.alive = false;
+        if (p.fallTimer >= C.FALL_TIME) {
+          p.alive = false;
+          if (!p.bot && !p.clone) p.spectre = { x: 0, z: 0, cd: 2 }; // 유령이 되어 가운데에서 나타남
+        }
       } else if (p.air <= 0 && !this.arena.isStanding(p.x, p.z, C.FALL_MARGIN * p.mods.size)) {
         if (p.phoenix > 0 && this.revive(p)) continue; // 불사조: 떨어지는 대신 부활
         p.fallTimer = dt;
@@ -693,6 +699,24 @@ export class Room {
         this.onFall(p);
         p.vx *= 0.35; p.vz *= 0.35; // 떨어지기 시작하면 옆으로 덜 미끄러짐 (구멍 안으로 쑥)
       }
+    }
+  }
+
+  // 탈락자 유령: 이동 입력으로 떠다니고, 밀치기 버튼으로 발밑에 작은 바람 (판 위 사람만 밀림, 피해 없음)
+  updateSpectres(dt) {
+    for (const p of this.players.values()) {
+      const g = p.spectre;
+      if (!g || p.alive) continue;
+      g.cd = Math.max(0, g.cd - dt);
+      g.x += p.input.x * C.SPECTRE_SPEED * dt; g.z += p.input.z * C.SPECTRE_SPEED * dt;
+      const r = Math.hypot(g.x, g.z), max = this.maxR;
+      if (r > max) { g.x *= max / r; g.z *= max / r; }
+      if (p.input.attack && g.cd === 0) {
+        g.cd = C.SPECTRE_CD;
+        this.blast(g.x, g.z, C.SPECTRE_RADIUS, C.SPECTRE_POWER, 0, p.id);
+        this.event({ k: 'spectre', id: p.id, x: g.x, z: g.z, r: C.SPECTRE_RADIUS });
+      }
+      p.input.attack = false;
     }
   }
 
@@ -1137,6 +1161,7 @@ export class Room {
         em: p.emoteTimer > 0 ? p.emote : -1, away: !!p.away, hat: p.hat, ti: p.title, lv: p.level,
         sk: p.skills, cd: p.skillCd.map(r2),
         mir: r2(p.mirror), gh: p.ghost > 0, sl: p.slip > 0,
+        gx: p.spectre && !p.alive && this.phase === 'playing' ? [r2(p.spectre.x), r2(p.spectre.z), r2(p.spectre.cd)] : null,
         sh: p.shield > 0, dash: p.dash > 0, air: p.airMax ? r2(Math.max(0, p.air) / p.airMax) : 0,
       })),
     });

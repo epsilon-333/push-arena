@@ -456,6 +456,7 @@ function playEvents(events) {
   for (const e of events ?? []) {
     if (e.k === 'hit') playHit(e);
     else if (e.k === 'ko') playKo(e);
+    else if (e.k === 'spectre') { spawnRing(e.x, e.z, e.r, '#cfe0ff'); fx.puffRing(e.x, e.z, e.r * 0.5, 10); Sound.play('ghost', e.id === myId ? 1 : volAt(e.x, e.z)); }
     else if (e.k === 'sudden') { UI.banner('서든데스!', 'danger', '바닥이 무너지고 밀치기가 세져요'); Sound.play('alarm', 1); shake = Math.max(shake, 0.4); }
     else if (e.k === 'ring') { spawnRing(e.x, e.z, e.r); fx.puffRing(e.x, e.z, e.r * 0.5, 14); Sound.play('boom', volAt(e.x, e.z)); }
     else if (e.k === 'dash') Sound.play('whoosh', e.id === myId ? 1 : 0.5);
@@ -557,8 +558,27 @@ function createView(p) {
   return { char, shield, ghost, dashPuff: 0, stepPuff: 0, label: UI.createLabel(), target: { x: p.x, z: p.z }, prev: { x: p.x, z: p.z }, speed: 0, atk: p.atk, hit: p.hit };
 }
 
+// 탈락자 유령: 반투명한 동그란 몸 + 눈, 그 사람 색 꼬리
+const spectreBody = new THREE.SphereGeometry(0.55, 18, 14), spectreEye = new THREE.SphereGeometry(0.08, 8, 6);
+const spectreEyeMat = new THREE.MeshBasicMaterial({ color: '#16171d' });
+function syncSpectre(v, p) {
+  if (p.gx && !v.spectre) {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(spectreBody, new THREE.MeshBasicMaterial({ color: '#f0f4ff', transparent: true, opacity: 0.55, depthWrite: false }));
+    body.scale.set(1, 1.15, 1);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.7, 14), new THREE.MeshBasicMaterial({ color: p.color, transparent: true, opacity: 0.45, depthWrite: false }));
+    tail.position.y = -0.7; tail.rotation.x = Math.PI;
+    g.add(body, tail);
+    for (const s of [-1, 1]) { const e = new THREE.Mesh(spectreEye, spectreEyeMat); e.position.set(0.48, 0.1, s * 0.18); g.add(e); }
+    g.position.set(p.gx[0], 2.2, p.gx[1]);
+    board.add(g);
+    v.spectre = g;
+  } else if (!p.gx && v.spectre) { board.remove(v.spectre); v.spectre = null; }
+  if (v.spectre) v.spectre.userData.target = p.gx;
+}
 function removeView(id) {
   const v = views.get(id);
+  if (v.spectre) board.remove(v.spectre);
   board.remove(v.char.root);
   v.label.remove();
   views.delete(id);
@@ -682,6 +702,8 @@ function applyState(s) {
     if (p.st && !v.state?.st) Sound.play('stun', isMe ? 1 : vol * 0.5);
     if (p.fall > 0 && !(v.state?.fall > 0)) Sound.play('fall', isMe ? 1 : vol * 0.6);
     if (p.em >= 0 && v.state?.em !== p.em) Sound.play('emote', isMe ? 1 : vol * 0.6);
+    if (isMe && p.gx && !v.state?.gx && s.phase === 'playing') UI.banner('유령이 되었어요 👻', 'info', '움직여서 떠다니고 밀치기로 훼방 놓기 (5초마다)');
+    syncSpectre(v, p);
     v.state = p;
     v.target.x = p.x; v.target.z = p.z;
     if (p.id === myId) reconcile(p);
@@ -699,6 +721,7 @@ function applyState(s) {
   document.body.classList.toggle('slowmo', s.ts < 1);
   document.body.classList.toggle('sudden', s.sd > 0 && s.phase === 'playing');
   playPhaseSounds(s, me);
+  Sound.setMusic(s.phase === 'gameOver' || s.phase === 'waiting' ? 'menu' : s.sd > 0 && s.phase === 'playing' ? 'sudden' : 'game');
   latestPhase = s.phase;
   syncOrbs(s.orbs);
   syncIce(s.ice);
@@ -816,6 +839,10 @@ const showVol = () => {
   volBox.querySelector('span').textContent = Math.round(v * 100);
 };
 showVol();
+const musicBtn = document.getElementById('music-toggle');
+const showMusic = () => { musicBtn.textContent = Sound.musicOn() ? '🎵 음악 켬' : '🎵 음악 끔'; };
+showMusic();
+musicBtn.onclick = () => { Sound.unlock(); Sound.toggleMusic(); showMusic(); musicBtn.blur(); };
 muteBtn.onclick = () => { Sound.unlock(); volBox.hidden = !volBox.hidden; muteBtn.blur(); };
 volSlider.oninput = () => { Sound.unlock(); Sound.setVolume(volSlider.value / 100); showVol(); };
 volSlider.onchange = () => { Sound.play('click'); volSlider.blur(); };
@@ -896,7 +923,9 @@ function sendInput() {
   const fwd = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - stick.y - pad.y;
   const right = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + stick.x + pad.x;
   moveBack = fwd < -0.3; // 뒤로 가는 중이면 카메라를 살짝 뒤로 물림
-  const fx = Math.cos(camYaw), fz = Math.sin(camYaw);
+  const me0 = latest?.players.find(p => p.id === myId);
+  const yaw = me0?.gx ? -Math.PI / 2 : camYaw; // 유령일 때는 전체 보기 카메라 기준 (위 = 화면 위쪽)
+  const fx = Math.cos(yaw), fz = Math.sin(yaw);
   let x = fx * fwd - fz * right, z = fz * fwd + fx * right;
   const len = Math.hypot(x, z);
   if (len > 1) { x /= len; z /= len; } // 조이스틱을 조금만 밀면 천천히
@@ -924,6 +953,7 @@ const hatPicker = document.getElementById('hat-picker');
 
 UI.initTitle((name, gameMode, code) => {
   Sound.unlock(); // 버튼을 누른 순간에만 소리를 켤 수 있음
+  Sound.setMusic('menu');
   connect({ name, mode: gameMode, code, hat: UI.getHat(), diff: UI.getBotDiff(), ...Meta.helloInfo() });
 });
 // 게임 중에 페이지가 새로고침됐으면(폰이 탭을 다시 불러옴) 원래 방으로 돌아가 봄
@@ -1076,6 +1106,18 @@ function frame(now) {
     const k = Math.min(1, e.life / e.max);
     e.update(e, k);
     if (k >= 1) { board.remove(e.obj); effects.splice(i, 1); }
+  }
+
+  // 유령: 둥실둥실 따라감, 바람이 준비되면 또렷하게
+  for (const v of views.values()) {
+    const g = v.spectre, tg = g?.userData.target;
+    if (!tg) continue;
+    const ox = g.position.x;
+    g.position.x += (tg[0] - g.position.x) * (1 - Math.exp(-dt * 10));
+    g.position.z += (tg[1] - g.position.z) * (1 - Math.exp(-dt * 10));
+    g.position.y = 2.2 + Math.sin(t * 3 + v.state.id) * 0.2;
+    if (Math.abs(g.position.x - ox) > 0.001) g.rotation.y = -Math.atan2(tg[1] - g.position.z, tg[0] - g.position.x);
+    g.children[0].material.opacity = tg[2] > 0 ? 0.3 : 0.6 + Math.sin(t * 8) * 0.1;
   }
 
   // 플레이어

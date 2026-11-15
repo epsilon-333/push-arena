@@ -12,6 +12,7 @@ export function unlock() {
   master = ctx.createGain(); master.connect(ctx.destination);
   sfxGain = ctx.createGain(); sfxGain.gain.value = 0.55; sfxGain.connect(master);
   master.gain.value = volume;
+  const want = songName; songName = 'off'; if (want !== 'off') setMusic(want); // 켜기 전에 정해 둔 곡
 }
 
 export function getVolume() { return volume; }
@@ -137,4 +138,69 @@ export function play(name, v = 1) {
   lastAt[name] = now;
   voices.push(now + 0.3);
   SFX[name](Math.min(1, v));
+}
+
+// ---------- 배경 음악 (파일 없이 만든 짧은 반복 곡) ----------
+// setMusic('menu' | 'game' | 'sudden' | 'off'). 박자마다 조금 앞서 예약해 끊김 없이 이어 붙인다
+const SONGS = {
+  // bpm, 화음 진행(근음 Hz), 멜로디(반음, null=쉼), 드럼 켬
+  menu: { bpm: 92, chords: [220, 174.6, 261.6, 196], mel: [7, null, 4, null, 2, 4, null, null, 0, null, 2, 4, 7, null, 4, null], drums: false, vol: 0.5 },
+  game: { bpm: 128, chords: [220, 220, 174.6, 196], mel: [12, null, 7, 12, null, 10, 7, null, 5, 7, null, 3, 5, null, 7, null], drums: true, vol: 0.55 },
+  sudden: { bpm: 156, chords: [220, 233.1, 220, 207.7], mel: [12, 11, 12, null, 15, null, 12, null, 11, 12, 11, null, 8, null, 7, null], drums: true, vol: 0.6 },
+};
+let musicGain = null, song = null, songName = 'off', step = 0, nextAt = 0, musicTimer = 0;
+const semi = (f, n) => f * 2 ** (n / 12);
+function mtone(freq, t, dur, type, vol) {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(musicGain); o.start(t); o.stop(t + dur + 0.05);
+}
+function mnoise(t, dur, vol, freq) {
+  const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  if (!noiseBuf) noise(0.01, { vol: 0.0001 });
+  src.buffer = noiseBuf; f.type = 'highpass'; f.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(musicGain); src.start(t); src.stop(t + dur + 0.05);
+}
+function scheduleMusic() {
+  if (!ctx || !song) return;
+  const s8 = 60 / song.bpm / 2; // 8분음표
+  while (nextAt < ctx.currentTime + 0.25) {
+    const i = step % 16, root = song.chords[Math.floor(step / 16) % song.chords.length];
+    if (i % 4 === 0) mtone(root / 2, nextAt, s8 * 3.5, 'triangle', 0.32);            // 베이스
+    if (i % 2 === 1) [0, 4, 7].forEach(n => mtone(semi(root, n), nextAt, s8 * 0.8, 'square', 0.035)); // 뒷박 화음
+    const m = song.mel[i];
+    if (m !== null) mtone(semi(root * 2, m), nextAt, s8 * 1.6, 'triangle', 0.09);
+    if (song.drums) {
+      if (i % 4 === 0) mtone(110, nextAt, 0.14, 'sine', 0.55);   // 쿵
+      if (i % 8 === 4) mnoise(nextAt, 0.12, 0.25, 1500);         // 짝
+      mnoise(nextAt, 0.03, 0.06, 7000);                          // 칙
+    }
+    nextAt += s8; step++;
+  }
+}
+export function setMusic(name) {
+  if (name === songName) return;
+  songName = name;
+  if (!ctx) return;
+  if (!musicGain) { musicGain = ctx.createGain(); musicGain.gain.value = 0; musicGain.connect(master); }
+  const target = SONGS[name]?.vol ?? 0;
+  musicGain.gain.setTargetAtTime(target * musicVolume * 0.5, ctx.currentTime, 0.4);
+  if (!SONGS[name]) { setTimeout(() => { if (songName === name) song = null; }, 1500); return; }
+  const wasPlaying = !!song;
+  song = SONGS[name];
+  if (!wasPlaying) { step = 0; nextAt = ctx.currentTime + 0.1; }
+  if (!musicTimer) musicTimer = setInterval(scheduleMusic, 80);
+}
+let musicVolume = 1;
+try { const v = localStorage.getItem('musicOn'); if (v === '0') musicVolume = 0; } catch {}
+export const musicOn = () => musicVolume > 0;
+export function toggleMusic() {
+  musicVolume = musicVolume > 0 ? 0 : 1;
+  try { localStorage.setItem('musicOn', musicVolume ? '1' : '0'); } catch {}
+  if (musicGain) musicGain.gain.setTargetAtTime((SONGS[songName]?.vol ?? 0) * musicVolume * 0.5, ctx.currentTime, 0.2);
+  return musicOn();
 }
