@@ -118,7 +118,7 @@ export class Arena {
   restoreArea(x, z, r) {
     const restored = [];
     for (const t of this.tiles.values()) {
-      if (t.state === 'alive' || Math.hypot(t.x - x, t.z - z) > r) continue;
+      if (t.state === 'alive' || t.dead || Math.hypot(t.x - x, t.z - z) > r) continue; // 서든데스로 사라진 타일(dead)은 못 고침
       t.state = 'alive';
       t.timer = 0;
       restored.push(t);
@@ -128,10 +128,17 @@ export class Arena {
   }
 
   fillHole(t) {
-    if (!t || t.state !== 'gone' || t.timer !== Infinity) return;
+    if (!t || t.dead || t.state !== 'gone' || t.timer !== Infinity) return;
     t.state = 'alive';
     t.timer = 0;
     this.version++;
+  }
+
+  // 아직 남아 있는 타일 중 가장 바깥 겹 (없으면 -1)
+  outerRing() {
+    let max = -1;
+    for (const t of this.tiles.values()) if (!t.dead) max = Math.max(max, this.ringOf(t));
+    return max;
   }
 
   // 시작 위치용: 맵 중심에서 이 정도 떨어진 곳은 항상 타일 위

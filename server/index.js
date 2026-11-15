@@ -17,10 +17,16 @@ const STATIC = {
   '/': path.join(ROOT, 'public'),
   '/three/': path.join(ROOT, 'node_modules/three/build'),
 };
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml' };
 
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
+  // 카드 목록: 처음 화면의 카드 도감이 방에 들어가기 전에도 볼 수 있게
+  if (url === '/api/catalog') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' });
+    res.end(JSON.stringify({ abilities: catalog, skillCd, winScore: CONFIG.WIN_SCORE }));
+    return;
+  }
   const prefix = url.startsWith('/three/') ? '/three/' : '/';
   const base = STATIC[prefix];
   let file = path.join(base, url.slice(prefix.length));
@@ -80,8 +86,12 @@ function enter(conn, room) {
   const player = room.addPlayer(conn.id, conn.socket);
   room.setName(conn.id, conn.name);
   room.setHat(conn.id, conn.hat);
+  room.setProfile(conn.id, conn.title, conn.level);
   conn.room = room;
-  if (room.kind === 'practice') for (let i = 0; i < PRACTICE_BOTS; i++) room.addBot();
+  if (room.kind === 'practice') {
+    room.setBotLevel(null, conn.diff ?? 1);
+    for (let i = 0; i < PRACTICE_BOTS; i++) room.addBot();
+  }
   welcome(conn);
   console.log(`[방 ${room.code} ${room.kind}] ${player.name} 입장 (${room.humans.length}명)`);
 }
@@ -100,6 +110,9 @@ function leave(conn) {
 function join(conn, msg) {
   conn.name = msg.name;
   conn.hat = msg.hat;
+  conn.title = msg.title;
+  conn.level = msg.level;
+  conn.diff = msg.diff;
   if (msg.mode === 'create') return enter(conn, createRoom('private'));
   if (msg.mode === 'practice') return enter(conn, createRoom('practice'));
   if (msg.mode === 'quick') return enter(conn, findQuickRoom());
@@ -169,6 +182,7 @@ wss.on('connection', socket => {
     else if (msg.t === 'restart') restart(conn);
     else if (msg.t === 'start') room.requestStart(id);
     else if (msg.t === 'bots') room.setBots(id, msg.on);
+    else if (msg.t === 'botLevel') room.setBotLevel(id, msg.n);
     else if (msg.t === 'emote') room.emote(id, msg.n);
     else if (msg.t === 'leave') { leave(conn); conns.delete(conn.token); }
     else if (msg.t === 'kick') {

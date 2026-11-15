@@ -7,15 +7,26 @@ const DIRS = Array.from({ length: 16 }, (_, i) => {
   return { x: Math.cos(a), z: Math.sin(a) };
 });
 
-export function createBotState() {
-  return { think: 0, aggression: 0.6 + Math.random() * 0.3 };
+// 난이도: 0 쉬움 / 1 보통 / 2 어려움
+// think: 생각하는 간격(초, 최소~최대) · aggro: 상대를 쫓는 정도 · hit: 사거리 안에서 밀칠 확률
+// skill: 한 번 생각할 때 스킬을 쓸지 볼 확률 · flank: 상대를 바깥으로 밀 수 있는 자리(중앙 쪽)로 돌아 들어가는 정도
+const LEVELS = [
+  { think: [0.24, 0.42], aggro: [0.35, 0.55], hit: 0.45, skill: 0.12, flank: 0 },
+  { think: [0.12, 0.24], aggro: [0.6, 0.9], hit: 0.75, skill: 0.35, flank: 0.35 },
+  { think: [0.06, 0.12], aggro: [0.85, 1.05], hit: 0.97, skill: 0.6, flank: 1 },
+];
+
+export function createBotState(level = 1) {
+  const L = LEVELS[level] ?? LEVELS[1];
+  return { think: 0, level, aggression: L.aggro[0] + Math.random() * (L.aggro[1] - L.aggro[0]) };
 }
 
 export function updateBot(p, room, dt) {
   const b = p.bot;
   b.think -= dt;
   if (b.think > 0) return;
-  b.think = 0.12 + Math.random() * 0.12; // 반응 속도
+  const L = LEVELS[b.level] ?? LEVELS[1];
+  b.think = L.think[0] + Math.random() * (L.think[1] - L.think[0]); // 반응 속도
 
   p.input.x = 0; p.input.z = 0;
   if (room.phase !== 'playing' || !p.alive || p.stunned || p.fallTimer > 0) return;
@@ -23,19 +34,32 @@ export function updateBot(p, room, dt) {
   const arena = room.arena;
   const maxR = arena.size * 1.5 * arena.rings;
   const others = [...room.players.values()].filter(o => room.teamOf(o) !== room.teamOf(p) && o.alive && o.fallTimer === 0);
-  let target = null, best = Infinity;
+  // 가까운 상대를 노림. 어려움은 기절했거나 가장자리에 몰린 상대를 더 좋아함
+  let target = null, best = Infinity, bestKey = Infinity;
   for (const o of others) {
     const d = Math.hypot(o.x - p.x, o.z - p.z);
-    if (d < best) { best = d; target = o; }
+    let key = d;
+    if (b.level >= 2) key -= (o.stunned ? 4 : 0) + (Math.hypot(o.x, o.z) / maxR) * 3;
+    if (key < bestKey) { bestKey = key; best = d; target = o; }
   }
+  // 돌아 들어가기: 상대보다 중앙 쪽에 서야 바깥으로 밀어낼 수 있음
+  let goal = target;
+  if (target && L.flank > 0 && best > 1.6) {
+    const tr = Math.hypot(target.x, target.z);
+    if (tr > 1) {
+      const back = Math.min(2.2, best * 0.6) * L.flank;
+      goal = { x: target.x - (target.x / tr) * back, z: target.z - (target.z / tr) * back };
+    }
+  }
+  const goalDist = goal ? Math.hypot(goal.x - p.x, goal.z - p.z) : 0;
 
   const tiltMag = Math.hypot(room.tilt.x, room.tilt.z);
   const fromCenter = Math.hypot(p.x, p.z);
   let bestDir = null, bestScore = -Infinity;
   for (const d of DIRS) {
     let score = Math.random() * 0.3;
-    if (target) {
-      const tx = (target.x - p.x) / (best || 1), tz = (target.z - p.z) / (best || 1);
+    if (goal && goalDist > 0.3) {
+      const tx = (goal.x - p.x) / goalDist, tz = (goal.z - p.z) / goalDist;
       score += (d.x * tx + d.z * tz) * b.aggression;
     }
     // 남의 바나나는 피하기
@@ -61,17 +85,16 @@ export function updateBot(p, room, dt) {
   if (target && best < C.ATTACK_RANGE * p.mods.range && p.cooldown === 0) {
     let diff = Math.atan2(target.z - p.z, target.x - p.x) - p.facing;
     diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-    if (Math.abs(diff) < C.ATTACK_ANGLE && Math.random() < 0.75) p.input.attack = true;
+    if (Math.abs(diff) < C.ATTACK_ANGLE && Math.random() < L.hit) p.input.attack = true;
     // 상대를 바라보도록 그 방향으로 이동 입력
     p.input.x = Math.cos(p.facing + diff); p.input.z = Math.sin(p.facing + diff);
   }
 
-  if (target) useSkills(p, room, target, best, others);
+  if (target && Math.random() < L.skill) useSkills(p, room, target, best, others);
 }
 
 // 스킬: 상황이 맞으면 가끔 쓴다
 function useSkills(p, room, target, dist, others) {
-  if (Math.random() > 0.35) return;
   const facingTarget = Math.abs(Math.atan2(Math.sin(Math.atan2(target.z - p.z, target.x - p.x) - p.facing),
     Math.cos(Math.atan2(target.z - p.z, target.x - p.x) - p.facing))) < 0.4;
   const near = r => others.filter(o => Math.hypot(o.x - p.x, o.z - p.z) < r).length;

@@ -96,10 +96,22 @@ export const CONFIG = {
   STUN_RECOVER_HP: 50,    // 이 체력이 되면 기절 해제
   STUN_IMMUNE_TIME: 1.5,  // 기절 해제 후 재기절 면역 시간
 
-  HAT_COUNT: 12,          // 모자 종류 수 (0 = 없음, 화면 쪽 js/character.js HATS와 맞춤)
+  HAT_COUNT: 19,          // 모자 종류 수 (0 = 없음 포함, 화면 쪽 js/character.js HATS 길이와 같게)
+  TITLE_COUNT: 24,        // 칭호 종류 수 (0 = 없음 포함, 화면 쪽 js/progress.js TITLES 길이와 같게)
   EMOTE_COUNT: 16,        // 이모티콘 종류 수 (화면 쪽 js/ui.js EMOTES 목록과 맞춤)
   EMOTE_TIME: 2.5,        // 말풍선 표시 시간
   EMOTE_COOLDOWN: 0.8,    // 연속 사용 제한
+
+  // 서든데스: 라운드가 길어지면 맵 규칙과 상관없이 바깥 겹부터 영구히 무너지고(복구 불가) 밀치기가 점점 세짐 → 라운드는 반드시 끝난다
+  SUDDEN_TIME: 35,        // 라운드 시작 뒤 이 시간(초)이 지나면 시작
+  SUDDEN_INTERVAL: 4,     // 한 겹씩 무너지는 간격
+  SUDDEN_WARN: 1.5,       // 무너지기 전 흔들리는 시간
+  SUDDEN_KNOCKBACK: 0.12, // 한 겹 무너질 때마다 밀치기 세기 +12%
+
+  KO_CREDIT_TIME: 3,      // 떨어지기 전 이 시간 안에 민 사람이 처치로 기록됨
+  MULTI_KO_TIME: 4,       // 이 시간 안에 연달아 떨어뜨리면 더블·트리플 KO
+  SLOWMO_TIME: 0.9,       // 결정타(마지막 상대가 떨어지기 시작) 슬로모션 길이 (실제 시간, 초)
+  SLOWMO_SCALE: 0.3,      // 슬로모션 동안 게임 속도
 
   COUNTDOWN_TIME: 3,
   ROUND_END_TIME: 3,

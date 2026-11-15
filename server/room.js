@@ -8,6 +8,19 @@ const NO_SOCKET = { readyState: 0, send() {} }; // 봇용
 
 const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ecf0f1'];
 
+// 한 게임 동안의 기록 (시상 · 경험치 · 도전 과제에 씀)
+const newStat = () => ({ hits: 0, falls: 0, multi: 0, alive: 0, picks: [], behind: 0 });
+
+// 게임이 끝나면 주는 상. 위에서부터 한 사람에게 하나씩 (값이 가장 큰 사람, 0이면 안 줌)
+const AWARDS = [
+  { id: 'ko', icon: '💥', name: '철거반장', text: n => `${n}명을 떨어뜨림`, value: p => p.kills },
+  { id: 'multi', icon: '⚡', name: '한 방에 여럿', text: n => `${n}연속 KO`, value: p => (p.stat.multi >= 2 ? p.stat.multi : 0) },
+  { id: 'hits', icon: '👊', name: '매운 손', text: n => `${n}번 맞힘`, value: p => p.stat.hits },
+  { id: 'alive', icon: '🛡️', name: '끈질긴 생명력', text: n => `${n}초 버팀`, value: p => Math.round(p.stat.alive) },
+  { id: 'falls', icon: '🪂', name: '단골 낙하산', text: n => `${n}번 떨어짐`, value: p => p.stat.falls },
+];
+const AWARD_NONE = { id: 'none', icon: '🎈', name: '참가상', text: () => '끝까지 함께함' };
+
 // 방 하나 = 게임 하나. 물리/판정은 전부 서버에서 계산한다.
 // 흐름: waiting → picking → countdown → playing → roundEnd → picking → countdown ...
 //       (최종 승자가 나오면 roundEnd 대신 gameOver. "다시 하기"를 누른 사람은 새 방으로 옮겨감)
@@ -49,6 +62,12 @@ export class Room {
     this.startRequested = false;
     this.autoStart = null;    // 빠른 시작 방: 자동 시작까지 남은 시간 (2명 이상일 때만)
     this.botsEnabled = false; // 대기실 설정: 빈자리를 AI로 채울지 (기본 끔, 방장만 바꿈)
+    this.botLevel = 1;        // 봇 난이도: 0 쉬움 / 1 보통 / 2 어려움
+    this.matchId = '';        // 게임 한 판의 id (화면 쪽에서 보상을 두 번 받지 않게)
+    this.round = 0;           // 지금 몇 번째 라운드인지
+    this.slowmo = 0;          // 결정타 슬로모션 남은 시간 (실제 시간)
+    this.roundTime = 0;
+    this.sudden = { steps: 0, t: 0 };
   }
 
   // 사람 기준으로 꽉 찼는지 (봇 자리는 사람이 오면 비워줌)
@@ -81,7 +100,8 @@ export class Room {
       dash: 0, shield: 0, air: 0, airMax: 0, trailTimer: 0,
       frozen: 0, pend: { vx: 0, vz: 0 }, giant: 0, baseMods: null, phoenix: 0,
       offers: null, picked: false,
-      emote: -1, emoteTimer: 0, emoteCooldown: 0, hat: 0,
+      emote: -1, emoteTimer: 0, emoteCooldown: 0, hat: 0, title: 0, level: 1,
+      stat: newStat(), koTimes: [],
       input: { x: 0, z: 0, attack: false, skill: -1 },
     };
     this.players.set(id, p);
@@ -93,7 +113,7 @@ export class Room {
   addBot() {
     const id = this.nextBotId--;
     const p = this.addPlayer(id, NO_SOCKET);
-    p.bot = createBotState();
+    p.bot = createBotState(this.botLevel);
     p.name = `봇 ${-id}`;
     p.hat = 1 + Math.floor(Math.random() * (C.HAT_COUNT - 1));
     return p;
@@ -162,6 +182,23 @@ export class Room {
     if (p) p.hat = n >= 0 && n < C.HAT_COUNT ? n : 0;
   }
 
+  // 칭호 · 레벨: 화면 쪽(브라우저 저장)에서 알려 주는 값. 보여 주기만 한다
+  setProfile(id, title, level) {
+    const p = this.players.get(id);
+    if (!p) return;
+    title = Math.floor(Number(title)); level = Math.floor(Number(level));
+    p.title = title >= 0 && title < C.TITLE_COUNT ? title : 0;
+    p.level = level >= 1 && level <= 99 ? level : 1;
+  }
+
+  // 봇 난이도 (연습방: 처음 화면에서 고름 / 친구 방: 방장이 대기실에서)
+  setBotLevel(id, n) {
+    n = Math.floor(Number(n));
+    if (!(n >= 0 && n <= 2) || this.phase !== 'waiting' || (id !== null && id !== this.hostId)) return;
+    this.botLevel = n;
+    for (const p of this.players.values()) if (p.bot && !p.clone) p.bot = createBotState(n);
+  }
+
   emote(id, n) {
     const p = this.players.get(id);
     n = Math.floor(Number(n));
@@ -199,6 +236,14 @@ export class Room {
     });
   }
 
+  // 게임 한 판 시작: 기록을 비우고 새 id를 붙임
+  beginMatch() {
+    this.matchId = `${this.code}-${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
+    this.round = 0;
+    this.results = null;
+    for (const p of this.players.values()) { p.stat = newStat(); p.koTimes = []; }
+  }
+
   // slot: 스킬 칸이 다 찼을 때 바꿀 칸 (0=Q, 1=E)
   pick(id, abilityId, slot) {
     const p = this.players.get(id);
@@ -220,6 +265,7 @@ export class Room {
       p.skillCd[i] = 0;
     }
     p.abilities.push(abilityId);
+    p.stat.picks.push(abilityId);
     p.mods = computeMods(p.abilities);
     p.picked = true;
   }
@@ -229,6 +275,10 @@ export class Room {
   startCountdown() {
     this.phase = 'countdown';
     this.timer = C.COUNTDOWN_TIME;
+    this.round++;
+    this.slowmo = 0;
+    this.roundTime = 0;                  // 이번 라운드가 시작된 뒤 흐른 시간
+    this.sudden = { steps: 0, t: 0 };    // 서든데스: 무너진 겹 수 / 다음 겹까지
     this.rule = C.MAP_RULES[Math.floor(Math.random() * C.MAP_RULES.length)];
     this.tilt = { x: 0, z: 0 };
     this.orbs = [];
@@ -254,11 +304,20 @@ export class Room {
     for (const p of this.players.values()) {
       if (!p.abilities.length) for (const id of C.TEST_CARDS) this.grantAbility(p, id);
       p.behind = top - p.score; // 뒤진 만큼 좋은 카드가 잘 나옴
+      p.stat.behind = Math.max(p.stat.behind, p.behind);
       p.offers = rollOffers(C.PICK_OPTIONS, p.abilities, p.behind);
       p.picked = false;
-      if (p.bot) this.grantAbility(p, p.offers[Math.floor(Math.random() * p.offers.length)].id);
+      if (p.bot) this.grantAbility(p, this.botPick(p).id);
       else this.send(p, { t: 'offer', offers: p.offers, skills: p.skills, time: C.PICK_TIME, luck: p.behind });
     }
+  }
+
+  // 봇의 카드 고르기: 어려움은 등급이 높은 카드, 그 밖에는 아무거나
+  botPick(p) {
+    const offers = p.offers;
+    if (p.bot.level < 2) return offers[Math.floor(Math.random() * offers.length)];
+    const rank = { common: 0, rare: 1, legend: 2, mythic: 3 };
+    return [...offers].sort((a, b) => rank[b.rarity] - rank[a.rarity])[0];
   }
 
   finishPicking() {
@@ -318,6 +377,7 @@ export class Room {
           this.autoStart = null;
           if (this.botsEnabled) this.fillBots();
           this.startRequested = false;
+          this.beginMatch();
           this.startPicking(); // 게임 시작: 첫 라운드 전에 카드 1장
         }
         break;
@@ -364,21 +424,44 @@ export class Room {
     }
   }
 
-  // 최종 순위: 승리 라운드 → 떨어뜨린 수
+  // 최종 순위: 승리 라운드 → 떨어뜨린 수. 한 사람에게 상 하나씩 (aw), 한 판 기록 (st)
   ranking() {
-    return [...this.players.values()].filter(p => !p.clone)
-      .sort((a, b) => b.score - a.score || b.kills - a.kills)
-      .map((p, i) => ({ rank: i + 1, id: p.id, name: p.name, color: p.color, hat: p.hat, score: p.score, kills: p.kills, ab: p.abilities, bot: !!p.bot }));
+    const list = [...this.players.values()].filter(p => !p.clone)
+      .sort((a, b) => b.score - a.score || b.kills - a.kills);
+    const awards = new Map();
+    for (const a of AWARDS) {
+      const free = list.filter(p => !awards.has(p.id));
+      const best = free.reduce((m, p) => (a.value(p) > (m ? a.value(m) : 0) ? p : m), null);
+      if (best) awards.set(best.id, { id: a.id, icon: a.icon, name: a.name, text: a.text(a.value(best)) });
+    }
+    return list.map((p, i) => ({
+      rank: i + 1, id: p.id, name: p.name, color: p.color, hat: p.hat, title: p.title, level: p.level,
+      score: p.score, kills: p.kills, ab: p.abilities, bot: !!p.bot,
+      aw: awards.get(p.id) ?? { id: AWARD_NONE.id, icon: AWARD_NONE.icon, name: AWARD_NONE.name, text: AWARD_NONE.text() },
+      st: { hits: p.stat.hits, falls: p.stat.falls, multi: p.stat.multi, alive: Math.round(p.stat.alive), picks: p.stat.picks, behind: p.stat.behind },
+    }));
   }
 
-  // 떨어진 사람을 최근(4초 안)에 민 사람에게 처치 기록
-  creditKill(p) {
-    const killer = this.players.get(p.lastHitBy);
-    if (killer && killer !== p && this.time - p.lastHitTime < 4) {
+  // 떨어지기 시작한 순간: 최근에 민 사람에게 처치 기록 + KO 알림. 마지막 상대였다면 슬로모션
+  onFall(p) {
+    if (p.clone) return; // 분신이 떨어진 것은 처치가 아님
+    p.stat.falls++;
+    const k = this.players.get(p.lastHitBy);
+    const killer = k && k !== p && !k.clone && this.time - p.lastHitTime < C.KO_CREDIT_TIME ? k : null;
+    let n = 0;
+    if (killer) {
       killer.kills++;
+      killer.koTimes = killer.koTimes.filter(t => this.time - t < C.MULTI_KO_TIME);
+      killer.koTimes.push(this.time);
+      n = killer.koTimes.length;
+      killer.stat.multi = Math.max(killer.stat.multi, n);
       // 봇은 떨어뜨리면 가끔 도발 (메롱, 잘 가, 겁쟁이, 약하다)
       if (killer.bot && Math.random() < 0.6) this.emote(killer.id, [4, 5, 8, 7][Math.floor(Math.random() * 4)]);
     }
+    const standing = [...this.players.values()].filter(o => o.alive && !o.clone && o.fallTimer === 0);
+    const fin = this.phase === 'playing' && standing.length <= 1;
+    if (fin) this.slowmo = C.SLOWMO_TIME;
+    this.event({ k: 'ko', id: p.id, by: killer?.id ?? null, n, fin, x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100 });
   }
 
   // ---------- 물리/전투 ----------
@@ -405,13 +488,37 @@ export class Room {
       const d = Math.hypot(dx, dz);
       if (d <= step) this.tilt = target;
       else { this.tilt.x += (dx / d) * step; this.tilt.z += (dz / d) * step; }
-    } else if (this.rule === 'shrink') {
+    } else if (this.rule === 'shrink' && this.roundTime < C.SUDDEN_TIME) {
       this.updateShrink(dt);
     } else if (this.rule === 'rain') {
       this.updateRain(dt, onGround);
     } else if (this.rule === 'bounce') {
       this.updateBounce(dt, onGround);
     }
+    this.roundTime += dt;
+    if (this.roundTime >= C.SUDDEN_TIME) this.updateSudden(dt);
+  }
+
+  // 서든데스: 남은 타일 중 가장 바깥 겹이 흔들리다 영구히 사라짐. 마지막엔 가운데 한 칸까지
+  updateSudden(dt) {
+    const s = this.sudden;
+    s.t -= dt;
+    if (s.t > 0) return;
+    const ring = this.arena.outerRing();
+    if (ring < 0) return;
+    for (const t of this.arena.tiles.values()) {
+      if (t.dead || this.arena.ringOf(t) !== ring) continue;
+      t.dead = true; // 복구·메우기·튀어오르기 대상에서 빠짐
+      this.quakes = this.quakes.filter(q => q.tile !== t);
+      this.bounces = this.bounces.filter(b => b.tile !== t);
+      if (t.state === 'gone') { t.timer = Infinity; continue; }
+      this.arena.shakeTile(t);
+      this.quakes.push({ tile: t, timer: C.SUDDEN_WARN, open: false, owner: null, perm: true });
+    }
+    if (s.steps === 0) this.event({ k: 'sudden' });
+    s.steps++;
+    s.t = C.SUDDEN_INTERVAL;
+    this.event({ k: 'rumble' });
   }
 
   // 얼음 발자국: 다른 사람이 남긴 얼음 위인지
@@ -465,6 +572,7 @@ export class Room {
       }
       p.phoenix = Math.max(0, p.phoenix - dt);
       const m = p.mods;
+      if (canAct && !p.clone && p.fallTimer === 0) p.stat.alive += dt;
       p.cooldown = Math.max(0, p.cooldown - dt);
       p.attackFlash = Math.max(0, p.attackFlash - dt);
       p.immune = Math.max(0, p.immune - dt);
@@ -567,11 +675,12 @@ export class Room {
     for (const p of list) {
       if (p.fallTimer > 0) {
         p.fallTimer += dt;
-        if (p.fallTimer >= C.FALL_TIME) { p.alive = false; this.creditKill(p); }
+        if (p.fallTimer >= C.FALL_TIME) p.alive = false;
       } else if (p.air <= 0 && !this.arena.isStanding(p.x, p.z, C.FALL_MARGIN * p.mods.size)) {
         if (p.phoenix > 0 && this.revive(p)) continue; // 불사조: 떨어지는 대신 부활
         p.fallTimer = dt;
         p.dash = 0;
+        this.onFall(p);
         p.vx *= 0.35; p.vz *= 0.35; // 떨어지기 시작하면 옆으로 덜 미끄러짐 (구멍 안으로 쑥)
       }
     }
@@ -693,7 +802,7 @@ export class Room {
       m.done = true;
       this.blast(m.x, m.z, C.METEOR_RADIUS, C.METEOR_POWER, 20, m.owner);
       const t = this.arena.tileAt(m.x, m.z);
-      if (t && t.state !== 'gone' && !t.protected && !this.quakes.some(q => q.tile === t)) {
+      if (t && !t.dead && t.state !== 'gone' && !t.protected && !this.quakes.some(q => q.tile === t)) {
         this.arena.openTile(t);
         this.quakes.push({ tile: t, timer: C.QUAKE_OPEN, open: true, owner: m.owner }); // 3초 뒤 메워짐
       }
@@ -734,7 +843,7 @@ export class Room {
     this.bounceTimer -= dt;
     if (this.bounceTimer <= 0) {
       this.bounceTimer = C.BOUNCE_INTERVAL;
-      const free = t => t && (t.state === 'alive' || t.state === 'cracked') && !t.protected && !this.bounces.some(b => b.tile === t);
+      const free = t => t && !t.dead && (t.state === 'alive' || t.state === 'cracked') && !t.protected && !this.bounces.some(b => b.tile === t);
       const all = [...this.arena.tiles.values()].filter(free);
       for (let i = 0; i < C.BOUNCE_TILES; i++) {
         let t = null;
@@ -775,7 +884,7 @@ export class Room {
     this.rainTimer -= dt;
     if (this.rainTimer > 0) return;
     this.rainTimer = C.RAIN_INTERVAL;
-    const free = t => t && (t.state === 'alive' || t.state === 'cracked') && !t.protected && !this.quakes.some(q => q.tile === t);
+    const free = t => t && !t.dead && (t.state === 'alive' || t.state === 'cracked') && !t.protected && !this.quakes.some(q => q.tile === t);
     const all = [...this.arena.tiles.values()].filter(free);
     for (let i = 0; i < C.RAIN_TILES; i++) {
       let t = null;
@@ -798,7 +907,7 @@ export class Room {
     const spot = [Math.PI / 2, -Math.PI / 2, Math.PI, 0]
       .map(a => ({ x: p.x + Math.cos(p.facing + a) * 1.6, z: p.z + Math.sin(p.facing + a) * 1.6 }))
       .find(s => this.arena.isGround(s.x, s.z)) ?? { x: p.x, z: p.z };
-    c.bot = createBotState();
+    c.bot = createBotState(1);
     c.bot.aggression = 1;
     Object.assign(c, {
       clone: true, owner: p.id, life: C.CLONE_TIME,
@@ -847,12 +956,19 @@ export class Room {
     const home = t.mods.territory && this.arena.tileAt(t.x, t.z)?.protected === t.id ? C.TERRITORY_WEIGHT : 1;
     const kb = C.KNOCKBACK * strength / (t.mods.weight * home) * (t.stunned ? C.STUN_KNOCKBACK_MULT : 1)
       * (this.rule === 'ice' ? C.ICE_KNOCKBACK_MULT : 1)
-      * (this.rule === 'lowgrav' ? C.LOWGRAV_KNOCKBACK_MULT : 1);
+      * (this.rule === 'lowgrav' ? C.LOWGRAV_KNOCKBACK_MULT : 1)
+      * (1 + C.SUDDEN_KNOCKBACK * this.sudden.steps); // 서든데스: 갈수록 멀리 날아감
     const sink = t.frozen > 0 ? t.pend : t; // 시간이 멈춘 상대는 충격이 쌓였다가 풀릴 때 한꺼번에
     sink.vx += nx * kb;
     sink.vz += nz * kb;
     t.hitCount++;
-    if (source) { t.lastHitBy = this.teamOf(source); t.lastHitTime = this.time; } // 분신이 밀어도 본체 처치로 기록
+    if (source) { // 분신이 밀어도 본체 처치로 기록
+      t.lastHitBy = this.teamOf(source); t.lastHitTime = this.time;
+      const owner = this.players.get(t.lastHitBy);
+      if (owner) owner.stat.hits++;
+    }
+    // 화면 효과용: 누가 어느 쪽으로 얼마나 세게 밀렸는지
+    this.event({ k: 'hit', id: t.id, by: source ? this.teamOf(source) : null, nx: Math.round(nx * 100) / 100, nz: Math.round(nz * 100) / 100, p: Math.round(kb) });
     if (source && t.mods.reflect > 0 && source.shield <= 0) {
       source.vx -= nx * kb * t.mods.reflect;
       source.vz -= nz * kb * t.mods.reflect;
@@ -940,13 +1056,16 @@ export class Room {
 
   tick(dt) {
     this.time = (this.time ?? 0) + dt;
+    // 결정타 슬로모션: 실제 시간으로 SLOWMO_TIME 동안 물리만 느리게
+    let simDt = dt;
+    if (this.slowmo > 0) { this.slowmo = Math.max(0, this.slowmo - dt); simDt = dt * C.SLOWMO_SCALE; }
     for (const p of this.players.values()) {
       p.emoteTimer = Math.max(0, p.emoteTimer - dt);
       p.emoteCooldown = Math.max(0, p.emoteCooldown - dt);
     }
     for (const p of this.players.values()) if (p.bot) updateBot(p, this, dt);
     this.updatePhase(dt);
-    if (this.phase === 'playing' || this.phase === 'roundEnd') this.updatePlayers(dt);
+    if (this.phase === 'playing' || this.phase === 'roundEnd') this.updatePlayers(simDt);
     // 분신: 수명이 다했거나 떨어졌거나 라운드가 끝나면 사라짐
     for (const p of [...this.players.values()]) {
       if (!p.clone || (this.phase === 'playing' && p.alive && p.life > 0)) continue;
@@ -983,6 +1102,9 @@ export class Room {
       timer: r2(Math.max(0, this.timer)),
       message: this.message,
       rule: this.rule,
+      sd: this.sudden.steps, sdIn: this.phase === 'playing' ? Math.max(0, Math.ceil(C.SUDDEN_TIME - this.roundTime)) : null,
+      rn: this.round, ts: this.slowmo > 0 ? C.SLOWMO_SCALE : 1, bl: this.botLevel,
+      match: this.phase === 'gameOver' ? { id: this.matchId, kind: this.kind, rounds: this.round, bl: this.botLevel, humans: this.humans.length } : null,
       tilt: { x: r2(this.tilt.x), z: r2(this.tilt.z) },
       orbs: this.orbs.map(o => ({ id: o.id, x: r2(o.x), z: r2(o.z), fly: o.fly > 0 })),
       ice: this.iceTrail.map(t => [r2(t.x), r2(t.z), r2(this.time - t.t)]),
@@ -1001,7 +1123,7 @@ export class Room {
         vx: r2(p.vx), vz: r2(p.vz), sq: p.inputSeq ?? 0, bot: !!p.bot, cl: !!p.clone, fz: p.frozen > 0, ph: p.phoenix > 0,
         ms: r2(p.mods.speed), mf: r2(p.mods.friction), mr: r2(p.mods.slideResist), ctl: !p.stunned && p.dash <= 0 && p.air <= 0 && p.slip <= 0 && p.frozen <= 0,
         sc: p.score, kl: p.kills, ab: p.abilities, pk: p.picked,
-        em: p.emoteTimer > 0 ? p.emote : -1, away: !!p.away, hat: p.hat,
+        em: p.emoteTimer > 0 ? p.emote : -1, away: !!p.away, hat: p.hat, ti: p.title, lv: p.level,
         sk: p.skills, cd: p.skillCd.map(r2),
         mir: r2(p.mirror), gh: p.ghost > 0, sl: p.slip > 0,
         sh: p.shield > 0, dash: p.dash > 0, air: p.airMax ? r2(Math.max(0, p.air) / p.airMax) : 0,
