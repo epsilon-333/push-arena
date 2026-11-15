@@ -353,6 +353,7 @@ const RULES = {
   big: { icon: '🧸', text: '거대화', sub: '모두 크기가 2배예요' },
   bounce: { icon: '🏀', text: '튀는 바닥', sub: '흔들리는 타일은 튀어올라요' },
 };
+const SHAPES = { donut: '🍩 도넛 맵', bridge: '🌉 다리 맵' }; // 맵 모양 (기본 육각형은 표시 안 함)
 let lastMessage = '';
 
 export function setMessage(text) {
@@ -380,7 +381,7 @@ export function renderHud(s, myId) {
   $('rule').classList.toggle('sudden', showRule && s.sd > 0);
   $('rule').classList.toggle('soon', showRule && !s.sd && s.sdIn !== null && s.sdIn <= 10);
   if (showRule) {
-    const round = `<i class="rule-round">R${s.rn}</i>`;
+    const round = `<i class="rule-round">R${s.rn}</i>${SHAPES[s.shape] ? `<i class="rule-map">${SHAPES[s.shape]}</i>` : ''}`;
     if (s.sd > 0) setHtml($('rule'), `${round}<span class="rule-icon">💀</span><b>서든데스</b><span>바닥이 무너지고 밀치기 +${Math.round(s.sd * 12)}%</span>`);
     else if (s.sdIn !== null && s.sdIn <= 10) setHtml($('rule'), `${round}<span class="rule-icon">${rule.icon}</span><b>${rule.text}</b><span>💀 서든데스까지 ${s.sdIn}초</span>`);
     else setHtml($('rule'), `${round}<span class="rule-icon">${rule.icon}</span><b>${rule.text}</b><span>${rule.sub}</span>`);

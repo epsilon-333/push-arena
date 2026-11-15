@@ -292,7 +292,7 @@ export class Room {
     this.rainTimer = C.RAIN_FIRST;
     this.bounces = [];
     this.bounceTimer = C.BOUNCE_FIRST;
-    this.arena.reset();
+    this.arena.reset(this.pickShape());
     this.spawnAll();
   }
 
@@ -330,13 +330,23 @@ export class Room {
     }
   }
 
+  // 맵 모양 뽑기 (비중대로)
+  pickShape() {
+    const entries = Object.entries(C.MAP_SHAPES);
+    let roll = Math.random() * entries.reduce((s, [, w]) => s + w, 0);
+    for (const [name, w] of entries) { roll -= w; if (roll <= 0) return name; }
+    return entries[0][0];
+  }
+
   spawnAll() {
     const list = [...this.players.values()];
     list.forEach((p, i) => {
       const a = (i / list.length) * Math.PI * 2;
       const r = this.arena.spawnRadius;
+      // 맵 모양에 따라 그 자리가 구멍일 수 있으므로 가장 가까운 타일 한가운데에 세움
+      const spot = this.arena.nearestTile(Math.cos(a) * r, Math.sin(a) * r) ?? { x: Math.cos(a) * r, z: Math.sin(a) * r };
       Object.assign(p, {
-        x: Math.cos(a) * r, z: Math.sin(a) * r, vx: 0, vz: 0,
+        x: spot.x, z: spot.z, vx: 0, vz: 0,
         facing: a + Math.PI, // 중앙을 바라봄
         hp: C.MAX_HP, stunned: false, immune: 0, cooldown: 0, attackFlash: 0,
         alive: true, fallTimer: 0,
@@ -813,9 +823,9 @@ export class Room {
 
   // 불사조 부활: 중앙 근처 바닥으로. 갈 곳이 없으면 false
   revive(p) {
-    const spots = [[0, 0], ...Array.from({ length: 8 }, (_, i) => [Math.cos(i * Math.PI / 4) * 3, Math.sin(i * Math.PI / 4) * 3])];
-    const s = spots.find(([x, z]) => this.arena.isGround(x, z));
-    if (!s) return false;
+    const t = this.arena.nearestTile(0, 0); // 중앙에서 가장 가까운 멀쩡한 타일
+    if (!t) return false;
+    const s = [t.x, t.z];
     this.event({ k: 'phoenix', ax: p.x, az: p.z, bx: s[0], bz: s[1] });
     p.x = s[0]; p.z = s[1]; p.vx = p.vz = 0; p.dash = 0; p.phoenix = 0;
     p.immune = Math.max(p.immune, 1.2);
@@ -1103,6 +1113,7 @@ export class Room {
       message: this.message,
       rule: this.rule,
       sd: this.sudden.steps, sdIn: this.phase === 'playing' ? Math.max(0, Math.ceil(C.SUDDEN_TIME - this.roundTime)) : null,
+      shape: this.arena.shape,
       rn: this.round, ts: this.slowmo > 0 ? C.SLOWMO_SCALE : 1, bl: this.botLevel,
       match: this.phase === 'gameOver' ? { id: this.matchId, kind: this.kind, rounds: this.round, bl: this.botLevel, humans: this.humans.length } : null,
       tilt: { x: r2(this.tilt.x), z: r2(this.tilt.z) },

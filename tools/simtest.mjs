@@ -10,7 +10,8 @@ const DT = 1 / C.TICK_RATE;
 let failed = 0;
 const check = (ok, msg) => { if (!ok) { failed++; console.log('  ✗', msg); } };
 
-function playGame(rule, level, testCards = []) {
+function playGame(rule, level, testCards = [], shape = null) {
+  C.MAP_SHAPES = shape ? { [shape]: 1 } : { full: 5, donut: 2, bridge: 2 };
   C.MAP_RULES = [rule];
   C.TEST_CARDS = testCards;
   const room = new Room('0000', { kind: 'practice' });
@@ -38,14 +39,18 @@ function playGame(rule, level, testCards = []) {
       if (m.ts < 1) seen.slow++;
       if (m.phase !== lastPhase) { if (m.phase === 'countdown') seen.rounds++; lastPhase = m.phase; }
       for (const e of m.ev) {
-        if (e.k === 'ko') { seen.ko++; if (e.fin) seen.fin++; check(room.players.has(e.id), 'ko 사건의 대상이 방에 있어야 함'); }
+        if (e.k === 'ko') {
+          seen.ko++; if (e.fin) seen.fin++;
+          check(room.players.has(e.id), 'ko 사건의 대상이 방에 있어야 함');
+          if (e.id < 0) { seen.botFalls = (seen.botFalls ?? 0) + 1; if (e.by === null) seen.botSelf = (seen.botSelf ?? 0) + 1; }
+        }
         if (e.k === 'hit') { seen.hit++; check(Number.isFinite(e.p) && Number.isFinite(e.nx), 'hit 사건 값이 숫자여야 함'); }
       }
       for (const p of m.players) check(Number.isFinite(p.x) && Number.isFinite(p.z), `위치가 숫자가 아님 (${p.name})`);
     }
     inbox.length = 0;
   }
-  const tag = `[${rule} · 난이도 ${level}]`;
+  const tag = `[${rule} · 난이도 ${level}${shape ? ' · ' + shape : ''}]`;
   check(room.phase === 'gameOver', `${tag} 게임이 끝나지 않음 (${ticks}틱)`);
   if (room.phase !== 'gameOver') return;
   const res = room.results;
@@ -71,6 +76,33 @@ for (const rule of rules) for (const level of [0, 1, 2]) {
   games++;
   if (out) console.log(`${rule.padEnd(8)} 난이도 ${level}: ${(out.ticks / C.TICK_RATE).toFixed(0).padStart(4)}초 · 라운드 ${String(out.seen.rounds).padStart(2)} · KO ${String(out.seen.ko).padStart(2)} · 1등 ${out.res[0].name} · 상 ${out.res.map(r => r.aw.icon).join('')}`);
 }
+// 맵 모양: 모양마다 모든 규칙으로 한 판씩 (보통 난이도). 시작 자리가 구멍이면 안 되고, 봇이 제 발로 너무 자주 떨어지면 안 됨
+for (const shape of ['full', 'donut', 'bridge']) {
+  let ko = 0, self = 0, time = 0, rounds = 0;
+  for (const rule of rules) {
+    const out = playGame(rule, 1, [], shape);
+    games++;
+    if (out) { ko += out.seen.botFalls ?? 0; self += out.seen.botSelf ?? 0; time += out.ticks / C.TICK_RATE; rounds += out.seen.rounds; }
+  }
+  // 봇이 아무에게도 안 밀렸는데 떨어진 비율 (서든데스로 바닥이 다 사라져 떨어진 것 포함)
+  console.log(`맵 모양 ${shape.padEnd(6)}: 라운드 평균 ${(time / rounds - 6).toFixed(0)}초 · 봇이 떨어진 ${ko}번 중 혼자 떨어짐 ${self} (${Math.round(self / ko * 100)}%)`);
+  check(self / ko < 0.2, `${shape}: 봇이 제 발로 너무 자주 떨어짐 (${self}/${ko})`);
+}
+{ // 어떤 모양 · 인원이든 시작 자리는 멀쩡한 타일 위
+  for (const shape of ['full', 'donut', 'bridge']) for (const n of [2, 3, 4]) {
+    C.MAP_SHAPES = { [shape]: 1 };
+    const room = new Room('0002', { kind: 'private' });
+    for (let i = 0; i < n; i++) room.addBot();
+    room.startCountdown();
+    for (const p of room.players.values()) {
+      const t = room.arena.tileAt(p.x, p.z);
+      check(t && t.state === 'alive' && !t.dead, `${shape} · ${n}명: 시작 자리가 타일 위여야 함`);
+    }
+    const spots = [...room.players.values()].map(p => `${p.x.toFixed(1)},${p.z.toFixed(1)}`);
+    check(new Set(spots).size === n, `${shape} · ${n}명: 시작 자리가 겹치면 안 됨`);
+  }
+}
+
 // 스킬 전부: 스킬 카드를 둘씩 쥐여 주고 한 판씩
 const skillCards = ABILITIES.filter(a => a.skill).map(a => a.id);
 check(skillCards.length === Object.keys(SKILLS).length, '스킬 카드 수와 스킬 수가 같아야 함');

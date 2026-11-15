@@ -48,9 +48,13 @@ export function updateBot(p, room, dt) {
     const tr = Math.hypot(target.x, target.z);
     if (tr > 1) {
       const back = Math.min(2.2, best * 0.6) * L.flank;
-      goal = { x: target.x - (target.x / tr) * back, z: target.z - (target.z / tr) * back };
+      const g = { x: target.x - (target.x / tr) * back, z: target.z - (target.z / tr) * back };
+      if (arena.isGround(g.x, g.z)) goal = g; // 도넛 맵처럼 그 자리가 구멍이면 그냥 상대에게
     }
   }
+  // 지금 속도로 미끄러질 자리에서 앞을 봄 (달리다가 구멍 앞에서 못 멈추는 일 줄이기)
+  const lead = b.level >= 1 ? 0.22 : 0.1;
+  const bx = p.x + p.vx * lead, bz = p.z + p.vz * lead;
   const goalDist = goal ? Math.hypot(goal.x - p.x, goal.z - p.z) : 0;
 
   const tiltMag = Math.hypot(room.tilt.x, room.tilt.z);
@@ -68,7 +72,7 @@ export function updateBot(p, room, dt) {
     }
     // 앞에 바닥이 없으면 크게 감점
     [0.8, 1.6, 2.6].forEach((dist, i) => {
-      const t = arena.tileAt(p.x + d.x * dist, p.z + d.z * dist);
+      const t = arena.tileAt(bx + d.x * dist, bz + d.z * dist);
       if (!t || t.state === 'gone') score -= 3 - i;
       else if (t.state === 'crumbling') score -= 0.6;
       else if (t.state === 'cracked' && i === 0) score -= 0.35; // 균열 타일은 다시 밟으면 무너짐

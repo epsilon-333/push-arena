@@ -3,6 +3,14 @@
 const SQRT3 = Math.sqrt(3);
 const STATE_CODE = { gone: 0, alive: 1, crumbling: 2, cracked: 3 }; // 4 = 영역 표시로 보호된 타일 (serialize 참고)
 
+// 맵 모양: 이 타일을 남길지. 빠진 타일은 처음부터 뚫려 있고(dead) 복구되지 않는다
+const SHAPES = {
+  full: () => true,
+  donut: (t, ring) => ring >= 2,                                  // 가운데 두 겹이 구멍
+  bridge: t => Math.abs(t.x) > 1.1 || Math.abs(t.z) < 2,          // 가운데 세로 틈, 한가운데만 다리
+};
+export const isShape = name => name in SHAPES;
+
 export class Arena {
   constructor(rings, tileSize) {
     this.rings = rings;
@@ -12,14 +20,17 @@ export class Arena {
     this.reset();
   }
 
-  reset() {
+  reset(shape = 'full') {
+    this.shape = isShape(shape) ? shape : 'full';
     this.tiles.clear();
     this.standing = new Map(); // 플레이어 id -> 마지막으로 서 있던 타일 key
     const N = this.rings;
     for (let q = -N; q <= N; q++) {
       for (let r = Math.max(-N, -q - N); r <= Math.min(N, -q + N); r++) {
         const { x, z } = this.toWorld(q, r);
-        this.tiles.set(`${q},${r}`, { q, r, x, z, state: 'alive', timer: 0 });
+        const t = { q, r, x, z, state: 'alive', timer: 0 };
+        if (!SHAPES[this.shape](t, this.ringOf(t))) Object.assign(t, { state: 'gone', timer: Infinity, dead: true });
+        this.tiles.set(`${q},${r}`, t);
       }
     }
     this.version++;
@@ -141,7 +152,18 @@ export class Arena {
     return max;
   }
 
-  // 시작 위치용: 맵 중심에서 이 정도 떨어진 곳은 항상 타일 위
+  // 이 자리에서 가장 가까운 멀쩡한 타일 (시작 위치, 부활 자리). 없으면 null
+  nearestTile(x, z) {
+    let best = null, bd = Infinity;
+    for (const t of this.tiles.values()) {
+      if (t.dead || t.state !== 'alive') continue;
+      const d = (t.x - x) ** 2 + (t.z - z) ** 2;
+      if (d < bd) { bd = d; best = t; }
+    }
+    return best;
+  }
+
+  // 시작 위치용: 맵 중심에서 이 정도 떨어진 곳 (맵 모양에 따라 구멍일 수 있어 nearestTile로 맞춤)
   get spawnRadius() { return this.size * 1.5 * this.rings * 0.6; }
 
   serialize() {
