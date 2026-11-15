@@ -896,7 +896,7 @@ function stepPred(st, ix, iz, me, dt) {
   if (latest.rule === 'spin') { // 회전판 (서버 room.js와 같은 식)
     const rr = Math.hypot(st.x, st.z);
     if (rr > 0.05) {
-      const k = Math.min(1, rr / P.maxR) * (1 - slide);
+      const k = Math.min(1, rr / (latest.mxR ?? P.maxR)) * (1 - slide); // 큰 판(십자가)은 판마다 크기가 다름
       st.vx += (-st.z / rr * P.spin + st.x / rr * P.spinOut) * k * dt;
       st.vz += (st.x / rr * P.spin + st.z / rr * P.spinOut) * k * dt;
     }

@@ -1137,7 +1137,7 @@ export class Room {
       message: this.message,
       rule: this.rule,
       sd: this.sudden.steps, sdIn: this.phase === 'playing' ? Math.max(0, Math.ceil(C.SUDDEN_TIME - this.roundTime)) : null,
-      shape: this.arena.shape,
+      shape: this.arena.shape, mxR: Math.round(this.maxR * 100) / 100, // 판 크기 (회전판 예측용)
       rn: this.round, ts: this.slowmo > 0 ? C.SLOWMO_SCALE : 1, bl: this.botLevel,
       match: this.phase === 'gameOver' ? { id: this.matchId, kind: this.kind, rounds: this.round, bl: this.botLevel, humans: this.humans.length } : null,
       tilt: { x: r2(this.tilt.x), z: r2(this.tilt.z) },
