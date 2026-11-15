@@ -11,7 +11,7 @@ let failed = 0;
 const check = (ok, msg) => { if (!ok) { failed++; console.log('  ✗', msg); } };
 
 function playGame(rule, level, testCards = [], shape = null) {
-  C.MAP_SHAPES = shape ? { [shape]: 1 } : { full: 5, donut: 2, bridge: 2 };
+  C.MAP_SHAPES = shape ? { [shape]: 1 } : { full: 40, donut: 20, bridge: 20, cross: 20 };
   C.MAP_RULES = [rule];
   C.TEST_CARDS = testCards;
   const room = new Room('0000', { kind: 'practice' });
@@ -77,7 +77,7 @@ for (const rule of rules) for (const level of [0, 1, 2]) {
   if (out) console.log(`${rule.padEnd(8)} 난이도 ${level}: ${(out.ticks / C.TICK_RATE).toFixed(0).padStart(4)}초 · 라운드 ${String(out.seen.rounds).padStart(2)} · KO ${String(out.seen.ko).padStart(2)} · 1등 ${out.res[0].name} · 상 ${out.res.map(r => r.aw.icon).join('')}`);
 }
 // 맵 모양: 모양마다 모든 규칙으로 한 판씩 (보통 난이도). 시작 자리가 구멍이면 안 되고, 봇이 제 발로 너무 자주 떨어지면 안 됨
-for (const shape of ['full', 'donut', 'bridge']) {
+for (const shape of ['full', 'donut', 'bridge', 'cross']) {
   let ko = 0, self = 0, time = 0, rounds = 0;
   for (const rule of rules) {
     const out = playGame(rule, 1, [], shape);
@@ -89,7 +89,7 @@ for (const shape of ['full', 'donut', 'bridge']) {
   check(self / ko < 0.3, `${shape}: 봇이 제 발로 너무 자주 떨어짐 (${self}/${ko})`);
 }
 { // 어떤 모양 · 인원이든 시작 자리는 멀쩡한 타일 위
-  for (const shape of ['full', 'donut', 'bridge']) for (const n of [2, 3, 4]) {
+  for (const shape of ['full', 'donut', 'bridge', 'cross']) for (const n of [2, 3, 4]) {
     C.MAP_SHAPES = { [shape]: 1 };
     const room = new Room('0002', { kind: 'private' });
     for (let i = 0; i < n; i++) room.addBot();

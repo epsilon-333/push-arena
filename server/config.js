@@ -18,9 +18,9 @@ export const CONFIG = {
   MAP_RULES: process.env.MAP_RULE ? [process.env.MAP_RULE] : ['collapse', 'tilt', 'ice', 'shrink', 'rain', 'lowgrav', 'spin', 'big', 'bounce'],
   // 테스트: TEST_CARDS=quake,banana npm start 처럼 쓰면 게임 시작할 때 모두에게 이 카드를 줌
   TEST_CARDS: process.env.TEST_CARDS ? process.env.TEST_CARDS.split(',') : [],
-  // 맵 모양 (라운드마다 랜덤, 맵 규칙과 따로 뽑음): full 육각형 / donut 가운데가 뚫림 / bridge 다리 하나로 이어진 두 섬
+  // 맵 모양 (라운드마다 랜덤, 맵 규칙과 따로 뽑음): full 육각형 / donut 가운데가 뚫림 / bridge 다리 하나로 이어진 두 섬 / cross 십자가
   // 테스트: MAP_SHAPE=donut npm start. 숫자는 뽑힐 비중
-  MAP_SHAPES: process.env.MAP_SHAPE ? { [process.env.MAP_SHAPE]: 1 } : { full: 5, donut: 2, bridge: 2 },
+  MAP_SHAPES: process.env.MAP_SHAPE ? { [process.env.MAP_SHAPE]: 1 } : { full: 40, donut: 20, bridge: 20, cross: 20 },
   CRUMBLE_TIME: 1,        // 균열 난 타일을 다시 밟으면 사라지기까지 (초)
   TILE_RESPAWN_TIME: 3,   // 사라진 타일이 다시 생기기까지 (초)
   MAX_TILT: 0.4,          // 최대 기울기 (라디안, 약 23도)

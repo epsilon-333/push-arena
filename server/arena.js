@@ -8,6 +8,7 @@ const SHAPES = {
   full: () => true,
   donut: (t, ring) => ring >= 2,                                  // 가운데 두 겹이 구멍
   bridge: t => Math.abs(t.x) > 1.1 || Math.abs(t.z) < 2,          // 가운데 세로 틈, 한가운데만 다리
+  cross: t => Math.abs(t.x) < 3.2 || Math.abs(t.z) < 2.9,         // 가로 · 세로 띠만 남은 십자가
 };
 export const isShape = name => name in SHAPES;
 

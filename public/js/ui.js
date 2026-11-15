@@ -353,7 +353,7 @@ const RULES = {
   big: { icon: '🧸', text: '거대화', sub: '모두 크기가 2배예요' },
   bounce: { icon: '🏀', text: '튀는 바닥', sub: '흔들리는 타일은 튀어올라요' },
 };
-const SHAPES = { donut: '🍩 도넛 맵', bridge: '🌉 다리 맵' }; // 맵 모양 (기본 육각형은 표시 안 함)
+const SHAPES = { donut: '🍩 도넛 맵', bridge: '🌉 다리 맵', cross: '✚ 십자가 맵' }; // 맵 모양 (기본 육각형은 표시 안 함)
 let lastMessage = '';
 
 export function setMessage(text) {
