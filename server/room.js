@@ -183,11 +183,13 @@ export class Room {
   }
 
   // 칭호 · 레벨: 화면 쪽(브라우저 저장)에서 알려 주는 값. 보여 주기만 한다
-  setProfile(id, title, level) {
+  setProfile(id, title, level, tier) {
     const p = this.players.get(id);
     if (!p) return;
     title = Math.floor(Number(title)); level = Math.floor(Number(level));
     p.title = title >= 0 && title < C.TITLE_COUNT ? title : 0;
+    tier = Math.floor(Number(tier));
+    p.tier = tier >= 0 && tier < C.TIER_COUNT ? tier : 0;
     p.level = level >= 1 && level <= 99 ? level : 1;
   }
 
@@ -215,7 +217,7 @@ export class Room {
 
   // 대기실에서 "빈자리 AI 채우기" 켬/끔 (방장만)
   setBots(id, on) {
-    if (this.phase === 'waiting' && id === this.hostId && !this.practice) {
+    if (this.phase === 'waiting' && id === this.hostId && !this.practice && this.kind !== 'ranked') { // 경쟁전은 사람끼리만
       this.botsEnabled = !!on;
       if (!on) for (const p of [...this.players.values()]) if (p.bot) this.players.delete(p.id);
     }
@@ -374,7 +376,7 @@ export class Room {
           break;
         }
         // 빠른 시작 방: 방장이 안 눌러도 2명 이상이면 잠시 뒤, 꽉 차면 곧 자동 시작
-        if (this.kind === 'quick') {
+        if (this.kind === 'quick' || this.kind === 'ranked') {
           const n = this.humans.length;
           if (n < C.MIN_PLAYERS) this.autoStart = null;
           else {
@@ -1139,7 +1141,7 @@ export class Room {
       sd: this.sudden.steps, sdIn: this.phase === 'playing' ? Math.max(0, Math.ceil(C.SUDDEN_TIME - this.roundTime)) : null,
       shape: this.arena.shape, mxR: Math.round(this.maxR * 100) / 100, // 판 크기 (회전판 예측용)
       rn: this.round, ts: this.slowmo > 0 ? C.SLOWMO_SCALE : 1, bl: this.botLevel,
-      match: this.phase === 'gameOver' ? { id: this.matchId, kind: this.kind, rounds: this.round, bl: this.botLevel, humans: this.humans.length } : null,
+      match: this.phase === 'gameOver' ? { id: this.matchId, kind: this.kind, rounds: this.round, bl: this.botLevel, humans: this.humans.length, players: this.results?.length ?? 0 } : null,
       tilt: { x: r2(this.tilt.x), z: r2(this.tilt.z) },
       orbs: this.orbs.map(o => ({ id: o.id, x: r2(o.x), z: r2(o.z), fly: o.fly > 0 })),
       ice: this.iceTrail.map(t => [r2(t.x), r2(t.z), r2(this.time - t.t)]),
@@ -1158,7 +1160,7 @@ export class Room {
         vx: r2(p.vx), vz: r2(p.vz), sq: p.inputSeq ?? 0, bot: !!p.bot, cl: !!p.clone, fz: p.frozen > 0, ph: p.phoenix > 0,
         ms: r2(p.mods.speed), mf: r2(p.mods.friction), mr: r2(p.mods.slideResist), ctl: !p.stunned && p.dash <= 0 && p.air <= 0 && p.slip <= 0 && p.frozen <= 0,
         sc: p.score, kl: p.kills, ab: p.abilities, pk: p.picked,
-        em: p.emoteTimer > 0 ? p.emote : -1, away: !!p.away, hat: p.hat, ti: p.title, lv: p.level,
+        em: p.emoteTimer > 0 ? p.emote : -1, away: !!p.away, hat: p.hat, ti: p.title, lv: p.level, tr: p.tier ?? 0,
         sk: p.skills, cd: p.skillCd.map(r2),
         mir: r2(p.mirror), gh: p.ghost > 0, sl: p.slip > 0,
         gx: p.spectre && !p.alive && this.phase === 'playing' ? [r2(p.spectre.x), r2(p.spectre.z), r2(p.spectre.cd)] : null,

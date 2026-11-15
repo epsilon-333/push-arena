@@ -112,5 +112,25 @@ check(P.levelInfo(sum).level === P.MAX_LEVEL && P.levelInfo(sum - 1).level === P
   check(P.unlockHint(P.HAT_UNLOCK[1]).includes('챔피언') && P.unlockHint(P.HAT_UNLOCK[3]) === '레벨 3', '잠긴 조건 설명');
 }
 
+// 경쟁전: 높은 랭크일수록 1등은 덜 오르고 꼴찌는 더 떨어짐, 0 밑으로는 안 내려감, 승급하면 칭호
+{
+  check(P.TIERS.length === C.TIER_COUNT, '랭크 수 = 서버 TIER_COUNT');
+  const gains = P.TIERS.map(t => P.rpDelta(t.rp, 1, 4)), losses = P.TIERS.map(t => P.rpDelta(t.rp, 4, 4));
+  check(gains.every((g, i) => i === 0 || g < gains[i - 1]) && losses.every((l, i) => i === 0 || l < losses[i - 1]), `오름 ${gains} · 떨어짐 ${losses}`);
+  const s = P.newSave();
+  const rm = (rank, n = 4) => P.applyMatch(s, match({ kind: 'ranked', humans: n, players: n }), me({ rank }), { cards, today: '2026-08-08' });
+  rm(4); check(s.rp === 0, '0점 밑으로 안 내려감');
+  check(P.titleUnlocked(s, P.TITLES.findIndex(t => t.tier === 0)), '경쟁전 한 판이면 브론즈 칭호');
+  let games = 0; while (P.tierOf(s.rp) < 1) { rm(1); games++; }
+  check(s.peakTier === 1 && P.titleUnlocked(s, P.TITLES.findIndex(t => t.tier === 1)), `실버 승급 (${games}판) → 실버 칭호`);
+  const before = s.rp; rm(4); rm(4); rm(4);
+  check(s.rp < before && P.titleUnlocked(s, P.TITLES.findIndex(t => t.tier === 1)), '떨어져도 얻은 칭호는 남음');
+  const pr = P.applyMatch(s, match({ kind: 'practice', humans: 1 }), me(), { cards, today: '2026-08-08' });
+  check(!pr.ranked, '연습은 랭크 점수 없음');
+  // 1등 · 꼴찌 반반이면 어디쯤에서 멈추는지 (높은 랭크는 유지가 어려워야 함)
+  const sim = P.newSave(); for (let i = 0; i < 400; i++) P.applyMatch(sim, match({ kind: 'ranked' }), me({ rank: i % 2 ? 1 : 4 }), { cards, today: '2026-08-09' });
+  console.log(`  1등·꼴찌 반반 400판 → ${P.TIERS[P.tierOf(sim.rp)].name} ${sim.rp}점 / 꾸준히 1등이면 실버까지 ${games}판`);
+}
+
 console.log(failed ? `실패 ${failed}건` : 'ALL OK');
 process.exit(failed ? 1 : 0);

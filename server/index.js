@@ -60,9 +60,10 @@ function createRoom(kind) {
   return room;
 }
 
-function findQuickRoom() {
-  for (const room of rooms.values()) if (room.kind === 'quick' && room.isOpen) return room;
-  return createRoom('quick');
+// 빠른 시작 · 경쟁전: 같은 종류의 열린 방에 모임 (없으면 새로)
+function findQuickRoom(kind = 'quick') {
+  for (const room of rooms.values()) if (room.kind === kind && room.isOpen) return room;
+  return createRoom(kind);
 }
 
 const catalog = ABILITIES.map(publicInfo);
@@ -86,7 +87,7 @@ function enter(conn, room) {
   const player = room.addPlayer(conn.id, conn.socket);
   room.setName(conn.id, conn.name);
   room.setHat(conn.id, conn.hat);
-  room.setProfile(conn.id, conn.title, conn.level);
+  room.setProfile(conn.id, conn.title, conn.level, conn.tier);
   conn.room = room;
   if (room.kind === 'practice') {
     room.setBotLevel(null, conn.diff ?? 1);
@@ -111,11 +112,13 @@ function join(conn, msg) {
   conn.name = msg.name;
   conn.hat = msg.hat;
   conn.title = msg.title;
+  conn.tier = msg.tier;
   conn.level = msg.level;
   conn.diff = msg.diff;
   if (msg.mode === 'create') return enter(conn, createRoom('private'));
   if (msg.mode === 'practice') return enter(conn, createRoom('practice'));
   if (msg.mode === 'quick') return enter(conn, findQuickRoom());
+  if (msg.mode === 'ranked') return enter(conn, findQuickRoom('ranked'));
   const room = rooms.get(String(msg.code ?? ''));
   if (!room || room.kind === 'practice') return send(conn.socket, { t: 'joinFail', reason: '그런 방이 없어요. 코드를 다시 확인해 주세요.' });
   if (room.phase !== 'waiting') return send(conn.socket, { t: 'joinFail', reason: '이미 게임이 시작된 방이에요.' });
@@ -180,7 +183,7 @@ wss.on('connection', socket => {
     if (msg.t === 'input') room.setInput(id, msg);
     else if (msg.t === 'pick') room.pick(id, msg.id, msg.slot);
     else if (msg.t === 'restart') {
-      if (msg.level !== undefined) { conn.level = msg.level; conn.title = msg.title; } // 방금 오른 레벨 · 바꾼 칭호
+      if (msg.level !== undefined) { conn.level = msg.level; conn.title = msg.title; conn.tier = msg.tier; } // 방금 오른 레벨 · 바꾼 칭호
       restart(conn);
     }
     else if (msg.t === 'start') room.requestStart(id);

@@ -930,3 +930,20 @@ body[data-rule="bounce"] { --sky: radial-gradient(ellipse at 50% 35%, #a04a8a 0%
 
 #rule .rule-map { font-style: normal; padding: 1px 8px; font-size: 13px; background: #ffe9a8; border: 2px solid var(--ink); border-radius: 999px; }
 #music-toggle { padding: 2px 10px; font-family: inherit; font-size: 13px; cursor: pointer; background: #fff; color: var(--ink); border: 2px solid var(--ink); border-radius: 999px; }
+
+/* ================= 경쟁전 ================= */
+#ranked {
+  display: flex; flex-direction: column; align-items: center; padding: 6px 22px; font-size: 20px; color: #fff; cursor: pointer;
+  background: linear-gradient(#b867ff, #7a3fd8); border: 3px solid var(--ink); border-radius: 14px; box-shadow: 0 6px 0 var(--ink);
+}
+#ranked small { font-size: 12px; opacity: .9; }
+#ranked:active { transform: translateY(4px); box-shadow: 0 2px 0 var(--ink); }
+.tier-chip { font-style: normal; flex: none; padding: 0 7px; font-size: 11px; color: #fff; border: 2px solid var(--ink); border-radius: 999px; text-shadow: 0 1px 0 var(--ink); }
+.rk-line { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 6px 10px; background: color-mix(in srgb, var(--tc) 22%, #fff); border: 3px solid var(--ink); border-radius: 12px; }
+.rk-badge { font-size: 34px; }
+.rk-main { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.rk-main b { font-weight: normal; font-size: 17px; }
+.rk-main i { font-style: normal; font-family: var(--font-title); }
+.rk-main i.plus { color: #1f9d50; } .rk-main i.minus { color: #d9362b; }
+.rk-main .m-bar i { background: var(--tc); }
+.rk-up { color: #1f9d50 !important; animation: lv-bump .6s cubic-bezier(.2,1.8,.4,1); } .rk-down { color: #d9362b !important; }

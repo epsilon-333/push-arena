@@ -99,8 +99,9 @@ export const CONFIG = {
   STUN_RECOVER_HP: 50,    // 이 체력이 되면 기절 해제
   STUN_IMMUNE_TIME: 1.5,  // 기절 해제 후 재기절 면역 시간
 
-  HAT_COUNT: 19,          // 모자 종류 수 (0 = 없음 포함, 화면 쪽 js/character.js HATS 길이와 같게)
-  TITLE_COUNT: 24,        // 칭호 종류 수 (0 = 없음 포함, 화면 쪽 js/progress.js TITLES 길이와 같게)
+  HAT_COUNT: 19,
+  TIER_COUNT: 6,          // 경쟁전 랭크 수 (화면 쪽 js/progress.js TIERS와 같게)          // 모자 종류 수 (0 = 없음 포함, 화면 쪽 js/character.js HATS 길이와 같게)
+  TITLE_COUNT: 30,        // 칭호 종류 수 (0 = 없음 포함, 화면 쪽 js/progress.js TITLES 길이와 같게)
   EMOTE_COUNT: 16,        // 이모티콘 종류 수 (화면 쪽 js/ui.js EMOTES 목록과 맞춤)
   EMOTE_TIME: 2.5,        // 말풍선 표시 시간
   EMOTE_COOLDOWN: 0.8,    // 연속 사용 제한

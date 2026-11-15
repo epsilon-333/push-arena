@@ -1,5 +1,5 @@
 // 화면 UI: 표지, 능력 카드, HUD, 이름표
-import { TITLES } from './progress.js';
+import { TITLES, TIERS } from './progress.js';
 
 // 카드 아이콘 (서버 카드 id 기준, 화면 표현만 담당)
 export const ICONS = {
@@ -176,6 +176,7 @@ export function initTitle(onStart) {
     onStart(name, mode, code.value);
   };
   $('start').onclick = () => start('quick');
+  $('ranked').onclick = () => start('ranked');
   $('create').onclick = () => start('create');
   $('join').onclick = () => start('join');
   $('practice').onclick = () => start('practice');
@@ -509,11 +510,12 @@ export function updateLobby(s, myId) {
   lv.textContent = `🤖 AI 난이도: ${BOT_LEVEL[s.bl] ?? '보통'}${amHost ? ' (눌러서 바꾸기)' : ''}`;
   const humans = s.players.filter(p => !p.bot);
   const canStart = s.bots || humans.length >= 2;
-  setHtml(el.querySelector('.lobby-code'), s.kind === 'quick'
+  setHtml(el.querySelector('.lobby-code'), s.kind === 'ranked' ? `🏆 경쟁전 · 사람끼리만 · 등수에 따라 랭크 점수가 오르고 내려요`
+    : s.kind === 'quick'
     ? `⚡ 빠른 시작 방 · 코드 <b>${s.code}</b>`
     : `방 코드 <b>${s.code}</b>`);
   setHtml(el.querySelector('.lobby-list'), humans.map(p =>
-    `<div class="lobby-row ${p.away ? 'away' : ''}"><span class="dot" style="background:${p.color}"></span><i class="lv-chip">Lv ${p.lv}</i>${p.name}${p.id === myId ? ' (나)' : ''}${titleName(p.ti) ? ` <em class="title-chip">${titleName(p.ti)}</em>` : ''}${p.away ? ' <small>📶 연결 끊김</small>' : ''}
+    `<div class="lobby-row ${p.away ? 'away' : ''}"><span class="dot" style="background:${p.color}"></span><i class="lv-chip">Lv ${p.lv}</i>${s.kind === 'ranked' ? `<i class="tier-chip" style="background:${TIERS[p.tr]?.color}">${TIERS[p.tr]?.icon} ${TIERS[p.tr]?.name}</i>` : ''}${p.name}${p.id === myId ? ' (나)' : ''}${titleName(p.ti) ? ` <em class="title-chip">${titleName(p.ti)}</em>` : ''}${p.away ? ' <small>📶 연결 끊김</small>' : ''}
       ${p.id === s.host ? '<span class="crown" title="방장">👑</span>' : ''}
       ${amHost && p.id !== myId ? `<button class="kick" data-id="${p.id}" data-name="${p.name}">내보내기</button>` : ''}</div>`).join('')
     + Array.from({ length: Math.max(0, 4 - humans.length) }, () =>
@@ -529,7 +531,10 @@ export function updateLobby(s, myId) {
   btn.disabled = !amHost || !canStart || pressing;
   btn.textContent = !amHost ? '방장을 기다리는 중…'
     : !canStart ? '2명 이상 또는 AI 켜기' : pressing ? '시작하는 중…' : '시작하기';
-  el.querySelector('.lobby-timer').textContent = s.kind !== 'quick' ? '친구에게 방 코드를 알려주면 들어올 수 있어요'
+  $('btn-bots').hidden = s.kind === 'ranked';
+  if (s.kind === 'ranked') { btn.textContent = s.auto !== null ? '곧 시작해요' : '상대를 찾는 중…'; btn.disabled = true; }
+  el.querySelector('.lobby-timer').textContent = s.kind === 'ranked' ? (s.auto !== null ? `⏱ ${s.auto}초 뒤 시작 · 4명이 다 차면 바로 시작` : '경쟁전을 누른 사람이 2명 이상 모이면 시작해요')
+    : s.kind !== 'quick' ? '친구에게 방 코드를 알려주면 들어올 수 있어요'
     : s.auto !== null ? `⏱ ${s.auto}초 뒤 자동 시작 · 4명이 다 차면 바로 시작`
     : '빠른 시작을 누른 사람들이 이 방으로 모여요 · 2명이 되면 자동 시작 준비';
 }

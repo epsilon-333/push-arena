@@ -41,7 +41,7 @@ export function setCatalog(list) {
 }
 
 // 서버에 알려 줄 내 칭호 · 레벨 (보여 주기만 함)
-export const helloInfo = () => ({ title: P.titleUnlocked(save, save.title) ? save.title : 0, level: level().level });
+export const helloInfo = () => ({ title: P.titleUnlocked(save, save.title) ? save.title : 0, level: level().level, tier: P.tierOf(save.rp) });
 
 // 모자 고르기 창이 쓰는 잠금 정보
 export const hatLocks = {
@@ -80,6 +80,8 @@ function renderProfile() {
   badge('daily', left ? String(left) : '');
   badge('dex', cards.size ? `${P.dexCount(save)}/${cards.size}` : '');
   badge('ach', '');
+  const rk = $('ranked-tier'), T = P.TIERS[P.tierOf(save.rp)];
+  if (rk) rk.textContent = save.stats.ranked ? `${T.icon} ${T.name} · ${save.rp}점` : '배치 전';
   const hatsBtn = $('btn-hats');
   if (hatsBtn) hatsBtn.classList.toggle('has-new', save.fresh.hats.length > 0);
   bar.classList.toggle('has-new', save.fresh.titles.length > 0);
@@ -181,6 +183,7 @@ function statsHtml() {
     </div>
     <div class="st-grid">
       ${cell('🎮', '끝까지 한 게임', s.games)}${cell('🏆', '우승', s.wins)}${cell('📈', '우승 비율', rate + '%')}${cell('🔥', '최고 연승', s.bestStreak)}
+      ${cell(P.TIERS[P.tierOf(save.rp)].icon, `경쟁전 ${P.TIERS[P.tierOf(save.rp)].name}`, s.ranked ? save.rp + '점' : '배치 전')}${cell('🎖️', '최고 랭크', s.ranked ? P.TIERS[save.peakTier].name : '-')}${cell('⚔️', '경쟁전 판 수', s.ranked)}${cell('🏅', '경쟁전 우승', s.rankedWins)}
       ${cell('💥', '떨어뜨림', s.kos)}${cell('⚡', '최고 연속 KO', s.bestMulti)}${cell('👊', '맞힌 횟수', s.hits)}${cell('🪂', '떨어짐', s.falls)}
     </div>
     <div class="m-head">칭호 고르기 <small>대기실과 순위표에서 이름 옆에 보여요</small></div>
@@ -235,6 +238,12 @@ export function showRewards() {
   if (!r) return;
   const el = document.querySelector('#results .rewards');
   const chips = [];
+  if (r.ranked) { // 경쟁전 점수: 맨 위 큰 줄
+    const k = r.ranked, A = P.TIERS[k.tierAfter], tp = P.tierProgress(k.after);
+    const moved = k.tierAfter > k.tierBefore ? `<b class="rk-up">${A.icon} ${A.name} 승급!</b>` : k.tierAfter < k.tierBefore ? `<b class="rk-down">${A.name}(으)로 강등</b>` : '';
+    chips.push(`<div class="rk-line" style="--tc:${A.color}"><span class="rk-badge">${A.icon}</span><span class="rk-main"><b>${A.name} ${k.after}점 <i class="${k.delta >= 0 ? 'plus' : 'minus'}">${k.delta >= 0 ? '+' : ''}${k.delta}</i></b>${moved}<span class="m-bar"><i style="width:${Math.round(tp.pct * 100)}%"></i><em>${tp.next ? `다음 랭크까지 ${tp.next}점` : '최고 랭크'}</em></span></span></div>`);
+    if (k.tierAfter > k.tierBefore) setTimeout(() => sound?.play('levelup'), 600);
+  }
   if (r.levelUps > 0) chips.push(`<i class="chip lv">🎊 레벨 ${r.after.level} 달성!</i>`);
   for (const n of r.hats) chips.push(`<i class="chip unlock">${hats[n]?.icon ?? '🎩'} 새 모자 「${hats[n]?.name ?? ''}」</i>`);
   for (const n of r.titles) chips.push(`<i class="chip unlock">🏷️ 새 칭호 「${titleOf(n)}」</i>`);
@@ -253,6 +262,7 @@ export function showRewards() {
       <span class="rw-gain">+<b>0</b> XP</span>
     </div>
     <div class="rw-lines">${lines}</div>
+    ${r.ranked ? chips.shift() : ''}
     ${chips.length ? `<div class="rw-chips">${chips.join('')}</div>` : ''}
     <div class="rw-next">${todo.length ? `📋 남은 미션: ${todo.map(m => `${P.missionText(m)} (${m.prog}/${m.goal})`).join(' · ')}` : '📋 오늘 미션을 모두 끝냈어요!'}${nx ? `<br>🎁 레벨 ${nx.lv}에 ${nx.text}` : ''}</div>`;
   el.hidden = false;

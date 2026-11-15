@@ -41,7 +41,38 @@ export const TITLES = [
   { name: '연승 행진', ach: 'streak3' },
   { name: '출석왕', ach: 'games100' },
   { name: '수집가', ach: 'dex_half' },
+  // 경쟁전 랭크 (처음 도달하면 영원히 가짐. 떨어져도 칭호는 남음)
+  { name: '브론즈 투사', tier: 0 },
+  { name: '실버 투사', tier: 1 },
+  { name: '골드 투사', tier: 2 },
+  { name: '플래티넘 투사', tier: 3 },
+  { name: '다이아몬드 투사', tier: 4 },
+  { name: '아레나 마스터', tier: 5 },
 ];
+
+// ---------- 경쟁전 랭크 ----------
+// rp: 이 점수부터 그 랭크. gain/loss: 오를 때 · 떨어질 때 곱하는 값 (높은 랭크일수록 덜 오르고 많이 떨어짐)
+export const TIERS = [
+  { name: '브론즈', icon: '🥉', color: '#c8834a', rp: 0, gain: 1.2, loss: 0.6 },
+  { name: '실버', icon: '🥈', color: '#aab4c4', rp: 300, gain: 1, loss: 0.85 },
+  { name: '골드', icon: '🥇', color: '#f0b820', rp: 700, gain: 0.85, loss: 1.25 },
+  { name: '플래티넘', icon: '💠', color: '#4fc4c4', rp: 1200, gain: 0.7, loss: 1.5 },
+  { name: '다이아몬드', icon: '💎', color: '#6f8cff', rp: 1800, gain: 0.55, loss: 1.8 },
+  { name: '마스터', icon: '👑', color: '#c060ff', rp: 2500, gain: 0.42, loss: 2.2 },
+];
+// 등수별 기본 점수 (인원 수마다). 이기면 +, 지면 -
+const RP_BASE = { 2: [30, -20], 3: [36, 4, -20], 4: [40, 14, -12, -24] };
+export const tierOf = rp => { let t = 0; TIERS.forEach((x, i) => { if (rp >= x.rp) t = i; }); return t; };
+export function rpDelta(rp, rank, players) {
+  const base = (RP_BASE[players] ?? RP_BASE[4])[rank - 1] ?? 0;
+  const T = TIERS[tierOf(rp)];
+  return Math.round(base * (base > 0 ? T.gain : T.loss));
+}
+// 랭크 안에서 다음 랭크까지 진행 (0~1)
+export function tierProgress(rp) {
+  const t = tierOf(rp), next = TIERS[t + 1];
+  return { tier: t, next: next ? next.rp - rp : 0, pct: next ? (rp - TIERS[t].rp) / (next.rp - TIERS[t].rp) : 1 };
+}
 
 // ---------- 모자 해금 (js/character.js HATS와 같은 순서) ----------
 export const HAT_UNLOCK = [
@@ -144,10 +175,11 @@ export function rollDaily(date) {
 
 // ---------- 저장 ----------
 const newStats = () => ({ games: 0, wins: 0, rounds: 0, kos: 0, hits: 0, falls: 0, double: 0, triple: 0, bestMulti: 0,
-  mythic: 0, legend: 0, perfect: 0, comeback: 0, hardWins: 0, onlineWins: 0, streak: 0, bestStreak: 0, dailyClears: 0, alive: 0 });
+  mythic: 0, legend: 0, perfect: 0, comeback: 0, hardWins: 0, onlineWins: 0, streak: 0, bestStreak: 0, dailyClears: 0, alive: 0,
+  ranked: 0, rankedWins: 0 });
 
 export function newSave() {
-  return { v: 1, xp: 0, stats: newStats(), cards: {}, ach: {}, daily: null, title: 0, lastPlay: '', matches: [], fresh: { hats: [], titles: [] } };
+  return { v: 1, rp: 0, peakTier: 0, xp: 0, stats: newStats(), cards: {}, ach: {}, daily: null, title: 0, lastPlay: '', matches: [], fresh: { hats: [], titles: [] } };
 }
 
 // 저장을 읽는다. 깨졌거나 없으면 새 저장. 빠진 칸은 기본값으로 채움 (나중에 칸이 늘어도 옛 저장을 그대로 씀)
@@ -169,13 +201,15 @@ export function ensureDaily(save, today = todayKey()) {
 }
 
 // ---------- 해금 ----------
-const isOpen = (rule, save) => (rule.ach ? !!save.ach[rule.ach] : levelInfo(save.xp).level >= (rule.lv ?? 1));
+const isOpen = (rule, save) => (rule.tier !== undefined ? save.stats.ranked > 0 && save.peakTier >= rule.tier
+  : rule.ach ? !!save.ach[rule.ach] : levelInfo(save.xp).level >= (rule.lv ?? 1));
 export const hatUnlocked = (save, n) => !!HAT_UNLOCK[n] && isOpen(HAT_UNLOCK[n], save);
 export const titleUnlocked = (save, n) => !!TITLES[n] && isOpen(TITLES[n], save);
 // 잠긴 것의 조건 설명
 // full: 도전 과제의 내용까지
 export function unlockHint(rule, full = false) {
   const a = ACH_BY_ID.get(rule.ach);
+  if (rule.tier !== undefined) return `경쟁전 ${TIERS[rule.tier].name}`;
   if (rule.ach) return `도전 과제 「${a?.name ?? rule.ach}」${full && a ? `(${a.desc})` : ''}`;
   return `레벨 ${rule.lv}`;
 }
@@ -194,7 +228,7 @@ export const achProgress = (a, save, total) => {
 export function applyMatch(save, match, me, ctx) {
   const today = ctx.today ?? todayKey();
   const report = { dup: false, lines: [], mult: 1, gained: 0, before: levelInfo(save.xp), after: null, levelUps: 0,
-    hats: [], titles: [], achievements: [], missions: [], bonus: 0, newCards: [] };
+    hats: [], titles: [], achievements: [], missions: [], bonus: 0, newCards: [], ranked: null };
   if (save.matches.includes(match.id)) { report.dup = true; report.after = report.before; return report; }
   save.matches = [...save.matches, match.id].slice(-8);
   ensureDaily(save, today);
@@ -222,6 +256,17 @@ export function applyMatch(save, match, me, ctx) {
     save.cards[id] = (save.cards[id] ?? 0) + 1;
     if (card.rarity === 'mythic') s.mythic++;
     if (card.rarity === 'legend') s.legend++;
+  }
+
+  // 경쟁전: 사람 2명 이상이 끝까지 한 판만
+  if (match.kind === 'ranked' && match.humans >= 2) {
+    const before = save.rp, tierBefore = tierOf(before);
+    const delta = rpDelta(before, me.rank, Math.min(4, match.players ?? match.humans));
+    save.rp = Math.max(0, before + delta);
+    s.ranked++; if (won) s.rankedWins++;
+    const tierAfter = tierOf(save.rp);
+    save.peakTier = Math.max(save.peakTier, tierAfter);
+    report.ranked = { before, after: save.rp, delta: save.rp - before, tierBefore, tierAfter };
   }
 
   // 한 판 경험치
