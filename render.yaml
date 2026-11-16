@@ -6,3 +6,9 @@ services:
     plan: free
     buildCommand: npm install
     startCommand: npm start
+    # 계정 저장 (Supabase). 값은 Render 대시보드 → Environment 에서 넣는다 (여기에 쓰지 말 것)
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false

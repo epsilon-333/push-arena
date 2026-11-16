@@ -8,6 +8,7 @@ const { CONFIG: C } = await import('../server/config.js');
 const A = await import('../server/accounts.js');
 const { Room } = await import('../server/room.js');
 const P = await import('../public/js/progress.js');
+await A.init();
 
 let failed = 0;
 const check = (ok, msg) => { if (!ok) { failed++; console.log('  ✗', msg); } };
@@ -62,9 +63,43 @@ check(A.getRank(keys[0]).rp === before + P.rpDelta(before, 1, 2), '혼자 남은
 check(A.getRank(keys[1]).rp === Math.max(0, before2 + P.rpDelta(before2, 2, 2)), '나간 사람은 꼴찌 점수');
 
 // 파일에 남는지
-A.flush();
+await A.flush();
 const disk = JSON.parse(fs.readFileSync(path.join(process.env.DATA_DIR, 'accounts.json'), 'utf8'));
 check(Object.keys(disk.users).length === 4 && !JSON.stringify(disk).includes('pass1234'), '파일에 저장 · 비밀번호는 원문으로 안 남음');
 fs.rmSync(process.env.DATA_DIR, { recursive: true });
+
+// Supabase: 가짜 Supabase(REST) 서버를 띄우고, 별도 프로세스 두 개로 저장 → 다시 켜서 읽기
+{
+  const http = await import('node:http');
+  const { execFileSync } = await import('node:child_process');
+  const table = new Map(), seen = [];
+  const mock = http.createServer((req, res) => {
+    let body = ''; req.on('data', c => { body += c; });
+    req.on('end', () => {
+      seen.push(`${req.method} ${req.url} key=${req.headers.apikey} auth=${req.headers.authorization} prefer=${req.headers.prefer ?? ''}`);
+      if (req.headers.apikey !== 'svc' || req.headers.authorization !== 'Bearer svc') { res.writeHead(401).end('no'); return; }
+      if (req.method === 'GET' && req.url.startsWith('/rest/v1/accounts?select=key,data')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify([...table.values()])); return;
+      }
+      if (req.method === 'POST' && req.url === '/rest/v1/accounts?on_conflict=key') {
+        for (const row of JSON.parse(body)) table.set(row.key, { key: row.key, data: row.data });
+        res.writeHead(201).end(); return;
+      }
+      res.writeHead(404).end();
+    });
+  });
+  await new Promise(r => mock.listen(0, r));
+  const env = { ...process.env, SUPABASE_URL: `http://127.0.0.1:${mock.address().port}/`, SUPABASE_SERVICE_KEY: 'svc', DATA_DIR: '/nonexistent' };
+  const run = code => new Promise((ok, bad) => {
+    import('node:child_process').then(({ execFile }) => execFile(process.execPath, ['--input-type=module', '-e', code], { env, cwd: process.cwd() }, (e, out, err) => (e ? bad(new Error(err || e.message)) : ok(out.trim()))));
+  });
+  const mod = new URL('../server/accounts.js', import.meta.url).href;
+  await run(`const A = await import('${mod}'); await A.init(); const r = A.register('수파', 'pw1234'); A.setRank(A.keyOf(r.token), { rp: 777, peakTier: 2, games: 3, wins: 1 }); await A.flush(); console.log(A.backend);`);
+  check(table.has('수파') && table.get('수파').data.rank.rp === 777, 'Supabase 표에 계정 한 줄 저장');
+  check(seen.some(l => l.includes('prefer=resolution=merge-duplicates')), 'upsert(merge-duplicates)로 올림');
+  const out = await run(`const A = await import('${mod}'); await A.init(); const r = A.login('수파', 'pw1234'); console.log(JSON.stringify(r.rank));`);
+  check(out.includes('"rp":777'), `다시 켜면 Supabase에서 읽어 옴 (${out.split('\n').pop()})`);
+  mock.close();
+}
 console.log(failed ? `실패 ${failed}건` : 'ALL OK');
 process.exit(failed ? 1 : 0);

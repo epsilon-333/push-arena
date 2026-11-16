@@ -253,6 +253,7 @@ setInterval(() => {
 const dt = 1 / CONFIG.TICK_RATE;
 setInterval(() => { for (const room of rooms.values()) room.tick(dt); }, 1000 * dt);
 
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { Accounts.flush(); process.exit(0); }); // 끄기 전에 계정 저장
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { Accounts.flush().catch(() => {}).finally(() => process.exit(0)); }); // 끄기 전에 계정 저장
 
+await Accounts.init(); // 계정을 다 읽은 뒤에 받기 시작
 server.listen(PORT, () => console.log(`http://localhost:${PORT}`));
