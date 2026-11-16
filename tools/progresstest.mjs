@@ -118,7 +118,9 @@ check(P.levelInfo(sum).level === P.MAX_LEVEL && P.levelInfo(sum - 1).level === P
   const gains = P.TIERS.map(t => P.rpDelta(t.rp, 1, 4)), losses = P.TIERS.map(t => P.rpDelta(t.rp, 4, 4));
   check(gains.every((g, i) => i === 0 || g < gains[i - 1]) && losses.every((l, i) => i === 0 || l < losses[i - 1]), `오름 ${gains} · 떨어짐 ${losses}`);
   const s = P.newSave();
-  const rm = (rank, n = 4) => P.applyMatch(s, match({ kind: 'ranked', humans: n, players: n }), me({ rank }), { cards, today: '2026-08-08' });
+  // 서버(room.applyRank)와 같은 계산을 흉내 내서 me.rk로 넘김
+  const rk = (sv, rank, n = 4) => { const before = sv.rp, after = Math.max(0, before + P.rpDelta(before, rank, n)); return { before, after, delta: after - before, tierBefore: P.tierOf(before), tierAfter: P.tierOf(after), peak: Math.max(sv.peakTier, P.tierOf(after)) }; };
+  const rm = (rank, n = 4) => P.applyMatch(s, match({ kind: 'ranked', humans: n, players: n }), me({ rank, rk: rk(s, rank, n) }), { cards, today: '2026-08-08' });
   rm(4); check(s.rp === 0, '0점 밑으로 안 내려감');
   check(P.titleUnlocked(s, P.TITLES.findIndex(t => t.tier === 0)), '경쟁전 한 판이면 브론즈 칭호');
   let games = 0; while (P.tierOf(s.rp) < 1) { rm(1); games++; }
@@ -128,7 +130,7 @@ check(P.levelInfo(sum).level === P.MAX_LEVEL && P.levelInfo(sum - 1).level === P
   const pr = P.applyMatch(s, match({ kind: 'practice', humans: 1 }), me(), { cards, today: '2026-08-08' });
   check(!pr.ranked, '연습은 랭크 점수 없음');
   // 1등 · 꼴찌 반반이면 어디쯤에서 멈추는지 (높은 랭크는 유지가 어려워야 함)
-  const sim = P.newSave(); for (let i = 0; i < 400; i++) P.applyMatch(sim, match({ kind: 'ranked' }), me({ rank: i % 2 ? 1 : 4 }), { cards, today: '2026-08-09' });
+  const sim = P.newSave(); for (let i = 0; i < 400; i++) P.applyMatch(sim, match({ kind: 'ranked' }), me({ rank: i % 2 ? 1 : 4, rk: rk(sim, i % 2 ? 1 : 4) }), { cards, today: '2026-08-09' });
   console.log(`  1등·꼴찌 반반 400판 → ${P.TIERS[P.tierOf(sim.rp)].name} ${sim.rp}점 / 꾸준히 1등이면 실버까지 ${games}판`);
 }
 

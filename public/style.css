@@ -947,3 +947,17 @@ body[data-rule="bounce"] { --sky: radial-gradient(ellipse at 50% 35%, #a04a8a 0%
 .rk-main i.plus { color: #1f9d50; } .rk-main i.minus { color: #d9362b; }
 .rk-main .m-bar i { background: var(--tc); }
 .rk-up { color: #1f9d50 !important; animation: lv-bump .6s cubic-bezier(.2,1.8,.4,1); } .rk-down { color: #d9362b !important; }
+
+/* ================= 계정 ================= */
+#btn-account b { font-weight: normal; }
+.acc-form { display: flex; flex-direction: column; gap: 10px; max-width: 380px; margin: 0 auto; }
+.acc-form input { padding: 10px 14px; font: inherit; font-size: 17px; border: 3px solid var(--ink); border-radius: 12px; background: #fff; color: var(--ink); outline: none; }
+.acc-buttons { display: flex; gap: 10px; justify-content: center; }
+.acc-buttons button { flex: 1; padding: 10px; font-family: inherit; font-size: 17px; cursor: pointer; border: 3px solid var(--ink); border-radius: 12px; box-shadow: 0 4px 0 var(--ink); background: #fff; color: var(--ink); }
+.acc-login, .acc-logout { background: var(--blue) !important; color: #fff !important; }
+.acc-register { background: #ffe9a8 !important; }
+.acc-msg { min-height: 1.2em; text-align: center; color: #d9362b; font-size: 14px; }
+.acc-notes { margin: 18px auto 0; max-width: 520px; padding-left: 20px; font-size: 13px; opacity: .75; line-height: 1.6; }
+.acc-box { display: flex; align-items: center; gap: 14px; padding: 14px; margin-bottom: 14px; background: #fff; border: 3px solid var(--ink); border-radius: 14px; }
+.acc-icon { font-size: 40px; } .acc-box b { font-weight: normal; font-size: 22px; display: block; } .acc-box small { font-size: 13px; opacity: .7; }
+@media (max-height: 520px), (max-width: 620px) { #btn-account { font-size: 13px; } }

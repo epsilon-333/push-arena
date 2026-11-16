@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server/index.js",
-    "test": "node tools/simtest.mjs && node tools/progresstest.mjs"
+    "test": "node tools/simtest.mjs && node tools/progresstest.mjs && node tools/accounttest.mjs"
   },
   "dependencies": {
     "three": "^0.186.1",

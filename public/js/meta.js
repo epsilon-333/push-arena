@@ -8,7 +8,30 @@ let save = P.newSave(), hats = [], sound = null;
 let cards = new Map(); // 카드 id → { name, rarity, kind, desc, ... } (서버 목록)
 let tab = 'daily', dexPick = null, rewardedMatch = null;
 
-const persist = () => P.store(save, localStorage);
+// 계정 (로그인하면 저장을 서버에도 올림). { name, token } — 브라우저에 기억
+let account = null;
+try { account = JSON.parse(localStorage.getItem('pushAccount')); } catch {}
+const keepAccount = () => { try { account ? localStorage.setItem('pushAccount', JSON.stringify(account)) : localStorage.removeItem('pushAccount'); } catch {} };
+async function call(method, url, body) {
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json', ...(account ? { Authorization: `Bearer ${account.token}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && account && !url.includes('login')) { account = null; keepAccount(); renderProfile(); }
+  if (!r.ok) throw new Error(data.error || '서버에 연결하지 못했어요.');
+  return data;
+}
+let uploadTimer = 0;
+function upload() { clearTimeout(uploadTimer); uploadTimer = setTimeout(() => { if (account) call('PUT', '/api/save', { save }).catch(() => {}); }, 800); }
+const persist = () => { P.store(save, localStorage); upload(); };
+// 서버에서 받은 저장 · 경쟁전 점수를 그대로 씀 (경쟁전 칸은 언제나 서버 값)
+function adopt(info) {
+  if (info.save) { const st = { getItem: () => JSON.stringify(info.save), setItem() {} }; save = P.load(st); P.ensureDaily(save); }
+  const rk = info.rank;
+  if (rk) { save.rp = rk.rp; save.peakTier = rk.peakTier; save.stats.ranked = rk.games; save.stats.rankedWins = rk.wins; }
+  if (!P.titleUnlocked(save, save.title)) save.title = 0;
+  P.store(save, localStorage);
+  if (!info.save) upload(); // 서버에 저장이 없으면(새 계정) 지금 기록을 올림
+  renderProfile();
+}
 const level = () => P.levelInfo(save.xp);
 const titleOf = n => P.TITLES[n]?.name ?? '';
 
@@ -32,6 +55,8 @@ export function init(o) {
   box.onclick = e => { if (e.target === box) box.hidden = true; };
   addEventListener('keydown', e => { if (e.key === 'Escape') box.hidden = true; });
   box.querySelector('.meta-body').onclick = onBodyClick;
+  if (account) call('GET', '/api/me').then(adopt).catch(() => {});
+  $('btn-account').onclick = () => open('account');
   renderProfile();
 }
 
@@ -41,7 +66,8 @@ export function setCatalog(list) {
 }
 
 // 서버에 알려 줄 내 칭호 · 레벨 (보여 주기만 함)
-export const helloInfo = () => ({ title: P.titleUnlocked(save, save.title) ? save.title : 0, level: level().level, tier: P.tierOf(save.rp) });
+export const helloInfo = () => ({ title: P.titleUnlocked(save, save.title) ? save.title : 0, level: level().level, tier: P.tierOf(save.rp), token: account?.token });
+export const accountName = () => account?.name ?? null;
 
 // 모자 고르기 창이 쓰는 잠금 정보
 export const hatLocks = {
@@ -80,6 +106,8 @@ function renderProfile() {
   badge('daily', left ? String(left) : '');
   badge('dex', cards.size ? `${P.dexCount(save)}/${cards.size}` : '');
   badge('ach', '');
+  const acc = $('btn-account');
+  if (acc) acc.innerHTML = account ? `👤 <b>${account.name}</b>` : '👤 로그인 · 계정 만들기';
   const rk = $('ranked-tier'), T = P.TIERS[P.tierOf(save.rp)];
   if (rk) rk.textContent = save.stats.ranked ? `${T.icon} ${T.name} · ${save.rp}점` : '배치 전';
   const hatsBtn = $('btn-hats');
@@ -96,7 +124,7 @@ function open(name) {
   }
   const box = $('meta');
   box.querySelectorAll('.meta-tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  box.querySelector('.meta-body').innerHTML = { daily: dailyHtml, ach: achHtml, dex: dexHtml, stats: statsHtml }[tab]();
+  box.querySelector('.meta-body').innerHTML = { daily: dailyHtml, ach: achHtml, dex: dexHtml, stats: statsHtml, account: accountHtml }[tab]();
   box.querySelector('.meta-body').scrollTop = 0;
   box.hidden = false;
   sound?.play('click');
@@ -190,7 +218,46 @@ function statsHtml() {
     <div class="title-grid">${titles}</div>`;
 }
 
+function accountHtml() {
+  if (account) return `<div class="m-head">계정</div>
+    <div class="acc-box"><span class="acc-icon">👤</span><div><b>${account.name}</b><small>기록과 경쟁전 점수가 서버에 저장돼요. 다른 기기에서도 이 아이디로 로그인하면 이어서 할 수 있어요.</small></div></div>
+    <div class="acc-buttons"><button class="acc-logout">로그아웃</button></div>`;
+  return `<div class="m-head">로그인 · 계정 만들기</div>
+    <div class="acc-form">
+      <input class="acc-name" maxlength="12" placeholder="아이디 (한글 · 영어 · 숫자 2~12자)" autocomplete="username">
+      <input class="acc-pw" type="password" maxlength="64" placeholder="비밀번호 (4자 이상)" autocomplete="current-password">
+      <div class="acc-buttons"><button class="acc-login">로그인</button><button class="acc-register">계정 만들기</button></div>
+      <div class="acc-msg"></div>
+    </div>
+    <ul class="acc-notes">
+      <li>계정을 만들면 지금 이 브라우저의 기록(레벨 · 도감 · 칭호 …)이 그대로 계정으로 옮겨져요.</li>
+      <li>이미 있는 계정으로 로그인하면 계정에 저장된 기록을 불러와요.</li>
+      <li>🏆 경쟁전은 로그인해야 할 수 있어요. 점수는 서버가 계산하고, 게임 도중 나가면 꼴찌로 처리돼요.</li>
+    </ul>`;
+}
+
+async function accountAction(kind) {
+  const body = $('meta').querySelector('.meta-body');
+  const msg = body.querySelector('.acc-msg');
+  const name = body.querySelector('.acc-name')?.value.trim(), password = body.querySelector('.acc-pw')?.value;
+  try {
+    if (kind === 'logout') { await call('POST', '/api/logout').catch(() => {}); account = null; keepAccount(); }
+    else {
+      msg.textContent = '잠깐만요…';
+      const r = await call('POST', kind === 'login' ? '/api/login' : '/api/register', { name, password });
+      account = { name: r.name, token: r.token }; keepAccount();
+      adopt(r); // 새 계정: 서버 저장이 없으니 지금 기록을 올림
+      const nick = $('nickname'); if (nick && !nick.value) nick.value = r.name;
+    }
+    renderProfile();
+    open('account');
+  } catch (err) { if (msg) msg.textContent = err.message; }
+}
+
 function onBodyClick(e) {
+  if (e.target.closest('.acc-login')) return accountAction('login');
+  if (e.target.closest('.acc-register')) return accountAction('register');
+  if (e.target.closest('.acc-logout')) return accountAction('logout');
   const card = e.target.closest('.dex-card');
   if (card) {
     dexPick = card.dataset.card || null;

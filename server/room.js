@@ -3,6 +3,8 @@ import { Arena } from './arena.js';
 import { computeMods, defaultMods, rollOffers, getAbility } from './abilities.js';
 import { SKILLS, slamLand, updateOrbs } from './skills.js';
 import { createBotState, updateBot } from './bot.js';
+import { rpDelta, tierOf } from '../public/js/progress.js';
+import * as Accounts from './accounts.js';
 
 const NO_SOCKET = { readyState: 0, send() {} }; // 봇용
 
@@ -120,6 +122,13 @@ export class Room {
   }
 
   removePlayer(id) {
+    const p = this.players.get(id);
+    // 경쟁전 도중에 나가면 꼴찌 처리. 사람이 혼자 남으면 그 사람은 1등으로 끝
+    if (p && this.ranked && !p.bot && this.phase !== 'waiting' && this.phase !== 'gameOver') {
+      this.applyRank(p, this.rankedCount - this.rankedQuits++);
+      const left = this.humans.filter(h => h !== p);
+      if (left.length === 1) this.applyRank(left[0], 1);
+    }
     this.players.delete(id);
     if (id === this.hostId) this.hostId = this.humans[0]?.id ?? null; // 먼저 들어온 사람이 방장을 이어받음
   }
@@ -183,6 +192,14 @@ export class Room {
   }
 
   // 칭호 · 레벨: 화면 쪽(브라우저 저장)에서 알려 주는 값. 보여 주기만 한다
+  // 로그인한 계정 (경쟁전 점수를 이 계정에 저장)
+  setAccount(id, key) {
+    const p = this.players.get(id);
+    if (!p) return;
+    p.account = key;
+    if (key) p.tier = tierOf(Accounts.getRank(key).rp);
+  }
+
   setProfile(id, title, level, tier) {
     const p = this.players.get(id);
     if (!p) return;
@@ -239,7 +256,27 @@ export class Room {
   }
 
   // 게임 한 판 시작: 기록을 비우고 새 id를 붙임
+  // 경쟁전 점수: 서버가 계산하고 계정에 바로 저장. 한 판에 한 번만 (rankDone)
+  // rank: 이번 판 등수(1부터), 인원은 시작할 때 사람 수 기준
+  applyRank(p, rank) {
+    if (!p.account || this.rankDone.has(p.id)) return null;
+    this.rankDone.add(p.id);
+    const r = Accounts.getRank(p.account);
+    const before = r.rp, tierBefore = tierOf(before);
+    const after = Math.max(0, before + rpDelta(before, rank, Math.min(4, this.rankedCount)));
+    const tierAfter = tierOf(after);
+    Accounts.setRank(p.account, { rp: after, peakTier: Math.max(r.peakTier, tierAfter), games: r.games + 1, wins: r.wins + (rank === 1 ? 1 : 0) });
+    p.tier = tierAfter;
+    p.rk = { before, after, delta: after - before, tierBefore, tierAfter, peak: Math.max(r.peakTier, tierAfter), rank };
+    return p.rk;
+  }
+
+  get ranked() { return this.kind === 'ranked'; }
+
   beginMatch() {
+    this.rankedCount = this.humans.length;
+    this.rankedQuits = 0;
+    this.rankDone = new Set();
     this.matchId = `${this.code}-${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
     this.round = 0;
     this.results = null;
@@ -409,6 +446,7 @@ export class Room {
             this.phase = 'gameOver'; // 이 방은 여기서 끝. 다시 하려면 새 방으로
             this.message = `${winner.name} 최종 승리!`;
             this.results = this.ranking();
+            if (this.ranked) for (const r of this.results) { const p = this.players.get(r.id); if (p && !p.bot) r.rk = this.applyRank(p, r.rank) ?? p.rk ?? null; }
           } else {
             this.phase = 'roundEnd';
             this.timer = C.ROUND_END_TIME;

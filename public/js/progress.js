@@ -258,15 +258,12 @@ export function applyMatch(save, match, me, ctx) {
     if (card.rarity === 'legend') s.legend++;
   }
 
-  // 경쟁전: 사람 2명 이상이 끝까지 한 판만
-  if (match.kind === 'ranked' && match.humans >= 2) {
-    const before = save.rp, tierBefore = tierOf(before);
-    const delta = rpDelta(before, me.rank, Math.min(4, match.players ?? match.humans));
-    save.rp = Math.max(0, before + delta);
+  // 경쟁전: 점수는 서버가 계산해서 순위 줄(me.rk)에 실어 보냄. 여기서는 받아 적기만
+  if (match.kind === 'ranked' && me.rk) {
+    const k = me.rk;
+    save.rp = k.after; save.peakTier = Math.max(save.peakTier, k.peak ?? k.tierAfter);
     s.ranked++; if (won) s.rankedWins++;
-    const tierAfter = tierOf(save.rp);
-    save.peakTier = Math.max(save.peakTier, tierAfter);
-    report.ranked = { before, after: save.rp, delta: save.rp - before, tierBefore, tierAfter };
+    report.ranked = { before: k.before, after: k.after, delta: k.delta, tierBefore: k.tierBefore, tierAfter: k.tierAfter };
   }
 
   // 한 판 경험치

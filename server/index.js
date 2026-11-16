@@ -8,6 +8,27 @@ import { CONFIG } from './config.js';
 import { Room } from './room.js';
 import { ABILITIES, publicInfo } from './abilities.js';
 import { SKILLS } from './skills.js';
+import * as Accounts from './accounts.js';
+
+// 계정 API: POST /api/register · /api/login · /api/logout, GET /api/me, PUT /api/save (Authorization: Bearer 토큰)
+function api(req, res, url) {
+  const reply = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const token = (req.headers.authorization ?? '').replace(/^Bearer /, '');
+  let body = '';
+  req.on('data', c => { body += c; if (body.length > 300_000) req.destroy(); });
+  req.on('end', () => {
+    let msg = {};
+    try { msg = body ? JSON.parse(body) : {}; } catch { return reply(400, { error: '잘못된 요청' }); }
+    if (url === '/api/register' && req.method === 'POST') { const r = Accounts.register(msg.name, msg.password); return reply(r.error ? 400 : 200, r); }
+    if (url === '/api/login' && req.method === 'POST') { const r = Accounts.login(msg.name, msg.password); return reply(r.error ? 401 : 200, r); }
+    const key = Accounts.keyOf(token);
+    if (!key) return reply(401, { error: '로그인이 풀렸어요. 다시 로그인해 주세요.' });
+    if (url === '/api/logout' && req.method === 'POST') { Accounts.logout(token); return reply(200, { ok: true }); }
+    if (url === '/api/me' && req.method === 'GET') return reply(200, Accounts.publicInfo(key));
+    if (url === '/api/save' && req.method === 'PUT') return reply(Accounts.putSave(key, msg.save) ? 200 : 400, { ok: true, rank: Accounts.getRank(key) });
+    reply(404, { error: '없는 주소' });
+  });
+}
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = process.env.PORT || 3000;
@@ -27,6 +48,7 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ abilities: catalog, skillCd, winScore: CONFIG.WIN_SCORE }));
     return;
   }
+  if (url.startsWith('/api/')) return api(req, res, url);
   const prefix = url.startsWith('/three/') ? '/three/' : '/';
   const base = STATIC[prefix];
   let file = path.join(base, url.slice(prefix.length));
@@ -88,6 +110,7 @@ function enter(conn, room) {
   room.setName(conn.id, conn.name);
   room.setHat(conn.id, conn.hat);
   room.setProfile(conn.id, conn.title, conn.level, conn.tier);
+  room.setAccount(conn.id, conn.account);
   conn.room = room;
   if (room.kind === 'practice') {
     room.setBotLevel(null, conn.diff ?? 1);
@@ -115,10 +138,14 @@ function join(conn, msg) {
   conn.tier = msg.tier;
   conn.level = msg.level;
   conn.diff = msg.diff;
+  conn.account = Accounts.keyOf(msg.token);
   if (msg.mode === 'create') return enter(conn, createRoom('private'));
   if (msg.mode === 'practice') return enter(conn, createRoom('practice'));
   if (msg.mode === 'quick') return enter(conn, findQuickRoom());
-  if (msg.mode === 'ranked') return enter(conn, findQuickRoom('ranked'));
+  if (msg.mode === 'ranked') {
+    if (!conn.account) return send(conn.socket, { t: 'joinFail', reason: '경쟁전은 계정으로 로그인해야 할 수 있어요. 왼쪽 위에서 로그인해 주세요.' });
+    return enter(conn, findQuickRoom('ranked'));
+  }
   const room = rooms.get(String(msg.code ?? ''));
   if (!room || room.kind === 'practice') return send(conn.socket, { t: 'joinFail', reason: '그런 방이 없어요. 코드를 다시 확인해 주세요.' });
   if (room.phase !== 'waiting') return send(conn.socket, { t: 'joinFail', reason: '이미 게임이 시작된 방이에요.' });
@@ -225,5 +252,7 @@ setInterval(() => {
 
 const dt = 1 / CONFIG.TICK_RATE;
 setInterval(() => { for (const room of rooms.values()) room.tick(dt); }, 1000 * dt);
+
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { Accounts.flush(); process.exit(0); }); // 끄기 전에 계정 저장
 
 server.listen(PORT, () => console.log(`http://localhost:${PORT}`));
